@@ -30,25 +30,16 @@ export const generateAccessAndRefreshTokens = async (userId) => {
   }
 };
 
-// register user Api
+// register user Api (step 1: send OTP)
 const registerUser = asyncHandler(async (req, res) => {
-  const {
-    firstName,
-    lastName,
-    email,
-    phone,
-    password,
-    userType,
-    role,
-    department,
-  } = req.body;
+  const { firstName, lastName, email, phone, password } = req.body;
 
   if (
-    [firstName, lastName, email, phone, password, userType].some(
+    [firstName, lastName, email, phone, password].some(
       (field) => !field || field?.trim() === ""
     )
   ) {
-    throw new ApiError(400, "All required fields are missing");
+    throw new ApiError(400, "All required fields are missings");
   }
 
   const existedUser = await User.findOne({
@@ -59,29 +50,104 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(409, "User with email or phone already exists");
   }
 
+  // Generate OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  console.log("Registration OTP ------->", otp);
+  const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+
+  // Create user with pending status and OTP
   const user = await User.create({
     firstName,
     lastName,
     email,
     phone,
     password,
-    userType,
-    role,
-    department,
-    status: "pending", // Will be activated after verification
+    otp: {
+      code: hashedOtp,
+      expiresAt: new Date(Date.now() + 2 * 60 * 1000), // 2 minutes
+    },
   });
 
-  const createdUser = await User.findById(user._id).select(
-    "-password -refreshToken"
-  );
-
-  if (!createdUser) {
-    throw new ApiError(500, "Something went wrong while registering the user");
+  try {
+    await emailService.sendOTPEmail(user.email, otp, "registration");
+  } catch (error) {
+    // If email fails, delete the user and throw error
+    await User.findByIdAndDelete(user._id);
+    throw new ApiError(
+      500,
+      error?.message || "Failed to send OTP. Please try again."
+    );
   }
 
   return res
     .status(201)
-    .json(new ApiResponse(201, createdUser, "User created successfully"));
+    .json(
+      new ApiResponse(
+        201,
+        { otpSent: true, email: user.email, userId: user._id },
+        "OTP sent to your email. Please verify within 2 minutes."
+      )
+    );
+});
+
+// Verify registration OTP (step 2: activate account)
+const verifyRegisterOtp = asyncHandler(async (req, res) => {
+  const { email, phone, userId, otp } = req.body;
+  console.log("Starting");
+  if (!otp) {
+    throw new ApiError(400, "OTP is required");
+  }
+
+  if (!email && !phone && !userId) {
+    throw new ApiError(400, "Email, phone, or userId is required");
+  }
+
+  const user = userId
+    ? await User.findById(userId)
+    : await User.findOne({
+        $or: [{ email }, { phone }],
+      });
+
+  if (!user) {
+    throw new ApiError(404, "User does not exist");
+  }
+
+  console.log("otppp ----->",user);
+
+  if (!user.otp?.code || !user.otp?.expiresAt) {
+    throw new ApiError(400, "No OTP request found for this user");
+  }
+
+  if (user.otp.expiresAt.getTime() < Date.now()) {
+    user.otp = undefined;
+    await user.save({ validateBeforeSave: false });
+    throw new ApiError(400, "OTP has expired. Please request a new one.");
+  }
+
+  const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+
+  if (hashedOtp !== user.otp.code) {
+    throw new ApiError(400, "Invalid OTP");
+  }
+
+  // Activate user account
+  user.otp = undefined;
+  user.status = "active";
+  await user.save({ validateBeforeSave: false });
+
+  const createdUser = await User.findById(user._id).select(
+    "-password -refreshToken -otp"
+  );
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        createdUser,
+        "Account verified and activated successfully"
+      )
+    );
 });
 
 // login user Api (step 1: credentials + send OTP)
@@ -134,12 +200,12 @@ const loginUser = asyncHandler(async (req, res) => {
 
   // Generate OTP and send email
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  console.log("otp ------->",otp);
+  console.log("Login OTP ------->", otp);
   const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
   user.otp = {
     code: hashedOtp,
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+    expiresAt: new Date(Date.now() + 2 * 60 * 1000), // 2 minutes
   };
   user.loginAttempts = 0;
   user.lockUntil = undefined;
@@ -197,7 +263,7 @@ const verifyLoginOtp = asyncHandler(async (req, res) => {
   if (user.otp.expiresAt.getTime() < Date.now()) {
     user.otp = undefined;
     await user.save({ validateBeforeSave: false });
-    throw new ApiError(400, "OTP has expired");
+    throw new ApiError(400, "OTP has expired. Please request a new one.");
   }
 
   const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
@@ -216,7 +282,7 @@ const verifyLoginOtp = asyncHandler(async (req, res) => {
   );
 
   const loggedInUser = await User.findById(user._id).select(
-    "-password -refreshToken"
+    "-password -refreshToken -otp"
   );
 
   const cookieOptions = {
@@ -381,7 +447,6 @@ const forgotPassword = asyncHandler(async (req, res) => {
   );
 });
 
-
 const resetPassword = asyncHandler(async (req, res) => {
   const { token } = req.query;
   const { newPassword } = req.body;
@@ -447,8 +512,23 @@ const changePassword = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, {}, "Password changed successfully"));
 });
 
+const deleteUser = asyncHandler(async (req, res) => {
+  const userId = req.params.id;
+
+  const user = await User.findByIdAndDelete(userId);
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "User deleted successfully"));
+});
+
 export {
   registerUser,
+  verifyRegisterOtp,
   loginUser,
   verifyLoginOtp,
   logOutUser,
@@ -457,4 +537,5 @@ export {
   forgotPassword,
   resetPassword,
   changePassword,
+  deleteUser,
 };

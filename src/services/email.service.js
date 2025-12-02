@@ -56,7 +56,7 @@ class EmailService {
             </div>
             <p>This link will expire in 15 minutes. If you didn't request this, you can safely ignore this email.</p>
             <div class="footer">
-              <p>© ${new Date().getFullYear()} Abizob CRM. All rights reserved.</p>
+              <p>© ${new Date().getFullYear()} { Platform Name } CRM. All rights reserved.</p>
             </div>
           </div>
         </body>
@@ -84,7 +84,7 @@ class EmailService {
       verification: "Verify your email - Abizob CRM",
       login: "Your login OTP - Abizob CRM",
       password_reset: "Reset your password - Abizob CRM",
-      registration: "Welcome! Verify your email - Abizob CRM",
+      registration: "Welcome! Verify your email - Social Media Platform",
     };
 
     const subject = subjectMap[purpose] || "Your OTP - Abizob CRM";

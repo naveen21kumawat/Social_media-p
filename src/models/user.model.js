@@ -4,42 +4,110 @@ import jwt from "jsonwebtoken";
 
 const userSchema = new Schema(
   {
+    firstName: { type: String, required: true, trim: true },
+    lastName: { type: String, required: true, trim: true },
     email: {
       type: String,
-      required: [true, "Email is Required"],
+      required: true,
+      unique: true,
+      lowercase: true,
       trim: true,
-      unique: [true, "Given Email Should be Unique"],
+    },
+    phone: { type: String, required: true, unique: true },
+    password: { type: String, required: true, select: false },
+    avatar: { type: String, default: null },
+    profileImage: { type: String, default: null }, // Alias for avatar
+    
+    // Additional personal details
+    gender: {
+      type: String,
+      enum: ["male", "female", "other", "prefer_not_to_say"],
+    },
+    dob: { type: Date }, // Date of birth
+
+
+    // Role & Access
+    role: { type: Schema.Types.ObjectId, ref: "Role" },
+    userType: {
+      type: String,
+      default:"user",
+      enum: [
+        "user",
+        "admin",
+      ],
+      // required: true,
     },
 
-    password: {
-      type: String,
-      required: [true, "Password is Required"],
+
+    lastLogin: { type: Date },
+    loginAttempts: { type: Number, default: 0 },
+    lockUntil: { type: Date },
+
+    // OTP for verification (registration/login)
+    otp: {
+      code: { type: String },
+      expiresAt: { type: Date },
     },
+
+    // Refresh token
+    refreshToken: { type: String, select: false },
   },
+
   { timestamps: true }
 );
 
-userSchema.pre("save", async function (next) {
-  if (!this.isModified(password)) return next();
-  this.password = await bcrypt.hash(this.password, 10);
-  next();
+// Indexes 
+userSchema.index({ email: 1 });
+userSchema.index({ phone: 1 });
+
+
+// Virtual for full name
+userSchema.virtual("fullName").get(function () {
+  return `${this.firstName} ${this.lastName}`;
 });
 
-userSchema.methods.isPasswordCorrect = async function (passwword) {
-  return await bcrypt.compare(passwword, this.password);
+// Check if account is locked
+userSchema.methods.isLocked = function () {
+  return this.lockUntil && this.lockUntil > Date.now();
 };
 
-userSchema.methods.genrateAccessToken = async function () {
+// Hash password before saving
+userSchema.pre("save", async function () {
+  if (this.isModified("password")) {
+    this.password = await bcrypt.hash(this.password, 10);
+  }
+});
+
+// Compare password
+userSchema.methods.isPasswordCorrect = async function (password) {
+  return await bcrypt.compare(password, this.password);
+};
+
+// Generate access token
+userSchema.methods.generateAccessToken = async function () {
   return await jwt.sign(
     {
       _id: this._id,
       email: this.email,
-      username: this.username,
-      fullName: this.fullName,
+      userType: this.userType,
+      role: this.role,
     },
-    process.env.ACCRESS_TOKEN_SECRET,
+    process.env.ACCESS_TOKEN_SECRET,
     {
-      expiresIn: process.env.ACCRESS_TOKEN_EXPIRY,
+      expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "1d",
+    }
+  );
+};
+
+// Generate refresh token
+userSchema.methods.generateRefreshToken = async function () {
+  return await jwt.sign(
+    {
+      _id: this._id,
+    },
+    process.env.REFRESH_TOKEN_SECRET,
+    {
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRY || "7d",
     }
   );
 };

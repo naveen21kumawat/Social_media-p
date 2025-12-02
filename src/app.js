@@ -26,7 +26,7 @@ app.use("/api/v1/users", userRoutes);
 app.use(healthRoutes);
 
 //  404 route
-app.all("*", (req, res, next) => {
+app.use((req, res, next) => {
   res.status(404).json({
     success: false,
     message: "Route not found",
