@@ -33,7 +33,7 @@ class EmailService {
       throw new Error("Email service not configured");
     }
 
-    const subject = "Reset your password - Abizob CRM";
+    const subject = "Reset your password - Social Media ";
     const html = `
         <!DOCTYPE html>
         <html>
@@ -81,13 +81,13 @@ class EmailService {
     }
 
     const subjectMap = {
-      verification: "Verify your email - Abizob CRM",
-      login: "Your login OTP - Abizob CRM",
-      password_reset: "Reset your password - Abizob CRM",
+      verification: "Verify your email - Social Media ",
+      login: "Your login OTP - Social Media ",
+      password_reset: "Reset your password - Social Media ",
       registration: "Welcome! Verify your email - Social Media Platform",
     };
 
-    const subject = subjectMap[purpose] || "Your OTP - Abizob CRM";
+    const subject = subjectMap[purpose] || "Your OTP - Social Media ";
 
     const html = `
       <!DOCTYPE html>

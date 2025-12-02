@@ -5,6 +5,7 @@ import asyncHandler from "../utils/asynHandler.js";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import emailService from "../services/email.service.js";
+import smsService from "../services/sms.service.js";
 import OTPService from "../services/otp.service.js";
 import EmailService from "../services/email.service.js";
 
@@ -16,16 +17,24 @@ export function generateOTP() {
 export const generateAccessAndRefreshTokens = async (userId) => {
   try {
     const user = await User.findById(userId);
+
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+
     const accessToken = await user.generateAccessToken();
     const refreshToken = await user.generateRefreshToken();
+
     user.refreshToken = refreshToken;
 
     await user.save({ validateBeforeSave: false });
     return { accessToken, refreshToken };
   } catch (error) {
+    console.error("Token generation error:", error);
     throw new ApiError(
       500,
-      "Something went wrong while generating refresh and access token"
+      error?.message ||
+        "Something went wrong while generating refresh and access tokens"
     );
   }
 };
@@ -34,33 +43,37 @@ export const generateAccessAndRefreshTokens = async (userId) => {
 const registerUser = asyncHandler(async (req, res) => {
   const { firstName, lastName, email, phone, password } = req.body;
 
-  if (
-    [firstName, lastName, email, phone, password].some(
-      (field) => !field || field?.trim() === ""
-    )
-  ) {
-    throw new ApiError(400, "All required fields are missings");
+  // Validate required fields
+  if (!firstName?.trim() || !lastName?.trim() || !password?.trim()) {
+    throw new ApiError(400, "First name, last name, and password are required");
   }
 
-  const existedUser = await User.findOne({
-    $or: [{ email }, { phone }],
-  });
+  // At least one of email or phone must be provided
+  if (!email && !phone) {
+    throw new ApiError(400, "Either email or phone number is required");
+  }
+
+  // Check if user already exists
+  const query = [];
+  if (email) query.push({ email });
+  if (phone) query.push({ phone });
+
+  const existedUser = await User.findOne({ $or: query });
 
   if (existedUser) {
-    throw new ApiError(409, "User with email or phone already exists");
+    throw new ApiError(409, "User with this email or phone already exists");
   }
 
   // Generate OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  console.log("Registration OTP ------->", otp);
   const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
   // Create user with pending status and OTP
   const user = await User.create({
     firstName,
     lastName,
-    email,
-    phone,
+    email: email || undefined,
+    phone: phone || undefined,
     password,
     otp: {
       code: hashedOtp,
@@ -69,25 +82,45 @@ const registerUser = asyncHandler(async (req, res) => {
   });
 
   try {
-    await emailService.sendOTPEmail(user.email, otp, "registration");
+    // Send OTP via email or SMS based on what's provided
+    if (email) {
+      await emailService.sendOTPEmail(user.email, otp, "registration");
+      return res.status(201).json(
+        new ApiResponse(
+          201,
+          {
+            otpSent: true,
+            email: user.email,
+            userId: user._id,
+            method: "email",
+          },
+          "OTP sent to your email. Please verify within 2 minutes."
+        )
+      );
+    } else if (phone) {
+      // Send OTP via SMS
+      await smsService.sendOTP(user.phone, otp, "registration");
+      return res.status(201).json(
+        new ApiResponse(
+          201,
+          {
+            otpSent: true,
+            phone: user.phone,
+            userId: user._id,
+            method: "sms",
+          },
+          "OTP sent to your phone. Please verify within 2 minutes."
+        )
+      );
+    }
   } catch (error) {
-    // If email fails, delete the user and throw error
+    // If OTP sending fails, delete the user and throw error
     await User.findByIdAndDelete(user._id);
     throw new ApiError(
       500,
       error?.message || "Failed to send OTP. Please try again."
     );
   }
-
-  return res
-    .status(201)
-    .json(
-      new ApiResponse(
-        201,
-        { otpSent: true, email: user.email, userId: user._id },
-        "OTP sent to your email. Please verify within 2 minutes."
-      )
-    );
 });
 
 // Verify registration OTP (step 2: activate account)
@@ -112,7 +145,7 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User does not exist");
   }
 
-  console.log("otppp ----->",user);
+  console.log("otppp ----->", user);
 
   if (!user.otp?.code || !user.otp?.expiresAt) {
     throw new ApiError(400, "No OTP request found for this user");
@@ -213,7 +246,36 @@ const loginUser = asyncHandler(async (req, res) => {
   await user.save({ validateBeforeSave: false });
 
   try {
-    await emailService.sendOTPEmail(user.email, otp, "login");
+    // Send OTP via email or SMS based on what user has
+    if (user.email && email) {
+      await emailService.sendOTPEmail(user.email, otp, "login");
+      return res.status(200).json(
+        new ApiResponse(
+          200,
+          {
+            otpSent: true,
+            email: user.email,
+            userId: user._id,
+            method: "email",
+          },
+          "OTP sent to your registered email"
+        )
+      );
+    } else if (user.phone && phone) {
+      await smsService.sendOTP(user.phone, otp, "login");
+      return res.status(200).json(
+        new ApiResponse(
+          200,
+          {
+            otpSent: true,
+            phone: user.phone,
+            userId: user._id,
+            method: "sms",
+          },
+          "OTP sent to your registered phone"
+        )
+      );
+    }
   } catch (error) {
     user.otp = undefined;
     await user.save({ validateBeforeSave: false });
@@ -222,16 +284,6 @@ const loginUser = asyncHandler(async (req, res) => {
       error?.message || "Failed to send OTP. Please try again."
     );
   }
-
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        { otpSent: true, email: user.email, userId: user._id },
-        "OTP sent to registered email"
-      )
-    );
 });
 
 // login user Api (step 2: verify OTP + issue tokens)
@@ -526,6 +578,38 @@ const deleteUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, {}, "User deleted successfully"));
 });
 
+
+const updateProfile = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const { firstName, lastName, bio, profile_type, coverPhoto } = req.body;
+ 
+  // to do
+  // image will upload into s3 buket or something else then extract the url and save into db
+
+  const user = await User.findById(userId);
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  // Update fields if provided
+  if (firstName) user.firstName = firstName;
+  if (lastName) user.lastName = lastName;
+  if (bio !== undefined) user.bio = bio;
+  if (profile_type) user.profile_type = profile_type;
+  if (coverPhoto) user.coverPhoto = coverPhoto;
+
+  await user.save();
+
+  const updatedUser = await User.findById(userId).select(
+    "-password -refreshToken -otp"
+  );
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, updatedUser, "Profile updated successfully"));
+});
+
 export {
   registerUser,
   verifyRegisterOtp,
@@ -538,4 +622,5 @@ export {
   resetPassword,
   changePassword,
   deleteUser,
+  updateProfile,
 };

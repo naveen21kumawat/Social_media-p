@@ -8,6 +8,9 @@ import { Server } from "./app.js";
 
 const Port = process.env.PORT || 3000;
 
+
+// to do cluster configration for production
+
 connectDB()
   .then(() => {
     Server.listen(Port, () =>

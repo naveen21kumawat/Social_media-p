@@ -8,15 +8,16 @@ const userSchema = new Schema(
     lastName: { type: String, required: true, trim: true },
     email: {
       type: String,
-      required: true,
       unique: true,
+      sparse: true,
       lowercase: true,
       trim: true,
     },
-    phone: { type: String, required: true, unique: true },
+    phone: { type: String, unique: true, sparse: true },
     password: { type: String, required: true, select: false },
     avatar: { type: String, default: null },
     profileImage: { type: String, default: null }, // Alias for avatar
+    coverPhoto: { type: String, default: null },
     
     // Additional personal details
     gender: {
@@ -37,6 +38,27 @@ const userSchema = new Schema(
       ],
       // required: true,
     },
+
+    bio:{ type: String, default:null },
+
+    profile_type:{
+      type: String,
+      enum: ["personal","business"],
+      default:"personal"
+    },
+
+    // Privacy settings
+    isPrivate: {
+      type: Boolean,
+      default: false, // false = public account, true = private account
+    },
+
+    status: {
+      type: String,
+      enum: ["active", "inactive", "suspended", "blocked"],
+      default: "active",
+    },
+
 
 
     lastLogin: { type: Date },

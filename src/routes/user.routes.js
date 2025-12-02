@@ -11,6 +11,7 @@ import {
   resetPassword,
   changePassword,
   deleteUser,
+  updateProfile
 } from "../controllers/user.controller.js";
 import { verifyJwt as verifyRoute } from "../middleware/auth.middleware.js"; // use this to protect routes
 
@@ -30,5 +31,6 @@ router.route("/logout").post(verifyRoute, logOutUser);
 router.route("/current-user").get(verifyRoute, getCurrentUser);
 router.route("/change-password").post(verifyRoute, changePassword);
 router.route("/delete/:id").delete(verifyRoute, deleteUser);
+router.route("/update-profile").put(verifyRoute, updateProfile);
 
 export { router as userRoutes };
