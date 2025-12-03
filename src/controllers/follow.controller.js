@@ -75,6 +75,7 @@ const acceptFollowRequest = asyncHandler(async (req, res) => {
 
   // Find the follow request
   const followRequest = await Followers.findById(requestId);
+  console.log("Follow request found:", followRequest);
 
   if (!followRequest) {
     throw new ApiError(404, "Follow request not found");

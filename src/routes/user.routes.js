@@ -11,7 +11,9 @@ import {
   resetPassword,
   changePassword,
   deleteUser,
-  updateProfile
+  updateProfile,
+  unlockAccount,
+  resetPasswordForTesting
 } from "../controllers/user.controller.js";
 import { verifyJwt as verifyRoute } from "../middleware/auth.middleware.js"; // use this to protect routes
 
@@ -25,6 +27,8 @@ router.route("/verify-login").post(verifyLoginOtp);
 router.route("/refresh-token").post(refreshAccessToken);
 router.route("/forgot-password").post(forgotPassword);
 router.route("/reset-password").post(resetPassword);
+router.route("/unlock-account").post(unlockAccount); // For development/testing
+router.route("/reset-password-testing").post(resetPasswordForTesting); // For development/testing
 
 // protected routes
 router.route("/logout").post(verifyRoute, logOutUser);

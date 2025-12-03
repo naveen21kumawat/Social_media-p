@@ -21,7 +21,7 @@ router.post("/request/:targetUserId", sendFollowRequest);
 router.post("/accept/:requestId", acceptFollowRequest);
 
 // Unfollow or remove follower
-router.delete("/remove/:targetUserId", removeFollow);
+router.delete("/a/:targetUserId", removeFollow);
 
 // Get follow relationship status
 router.get("/status/:targetUserId", getFollowStatus);

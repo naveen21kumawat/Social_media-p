@@ -42,7 +42,7 @@ export const generateAccessAndRefreshTokens = async (userId) => {
 // register user Api (step 1: send OTP)
 const registerUser = asyncHandler(async (req, res) => {
   const { firstName, lastName, email, phone, password } = req.body;
-
+    console.log("Register User Called");
   // Validate required fields
   if (!firstName?.trim() || !lastName?.trim() || !password?.trim()) {
     throw new ApiError(400, "First name, last name, and password are required");
@@ -145,8 +145,6 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User does not exist");
   }
 
-  console.log("otppp ----->", user);
-
   if (!user.otp?.code || !user.otp?.expiresAt) {
     throw new ApiError(400, "No OTP request found for this user");
   }
@@ -186,7 +184,12 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
 // login user Api (step 1: credentials + send OTP)
 const loginUser = asyncHandler(async (req, res) => {
   const { email, phone, password } = req.body;
-
+  
+  console.log("Login attempt with:");
+  console.log("- Email:", email);
+  console.log("- Phone:", phone);
+  console.log("- Password:", password);
+  
   if (!email && !phone) {
     throw new ApiError(400, "Email or phone is required");
   }
@@ -195,20 +198,59 @@ const loginUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Password is required");
   }
 
-  const user = await User.findOne({
-    $or: [{ email }, { phone }],
-  }).select("+password");
+  // Build query more explicitly
+  const query = [];
+  if (email) {
+    query.push({ email: email.toLowerCase().trim() });
+  }
+  if (phone) {
+    query.push({ phone: phone.trim() });
+  }
 
+  console.log("Query being executed:", JSON.stringify(query));
+
+  const user = await User.findOne({
+    $or: query
+  }).select("+password");
+  
+  console.log("Found user:", {
+    id: user?._id,
+    email: user?.email,
+    phone: user?.phone,
+    firstName: user?.firstName
+  });
+  
   if (!user) {
+    throw new ApiError(404, "User does not exist");
+  }
+  
+  // Verify the user matches what we're looking for
+  const emailMatch = email && user.email?.toLowerCase() === email.toLowerCase();
+  const phoneMatch = phone && user.phone === phone;
+  
+  console.log("Email match:", emailMatch, "Phone match:", phoneMatch);
+  
+  if (!emailMatch && !phoneMatch) {
+    console.error("QUERY MISMATCH! Found wrong user!");
+    console.error("Requested email:", email, "Found email:", user.email);
+    console.error("Requested phone:", phone, "Found phone:", user.phone);
     throw new ApiError(404, "User does not exist");
   }
 
   // Check if account is locked
   if (user.isLocked()) {
+    const lockTimeRemaining = Math.ceil((user.lockUntil - Date.now()) / 60000);
     throw new ApiError(
       423,
-      "Account is temporarily locked. Please try again later."
+      `Account is temporarily locked. Please try again in ${lockTimeRemaining} minutes.`
     );
+  }
+
+  // Auto-clear expired lock
+  if (user.lockUntil && user.lockUntil <= Date.now()) {
+    user.loginAttempts = 0;
+    user.lockUntil = undefined;
+    await user.save({ validateBeforeSave: false });
   }
 
   // Check if user is active
@@ -219,7 +261,11 @@ const loginUser = asyncHandler(async (req, res) => {
     );
   }
 
+  // console.log("Stored password hash:", user.password);
+  // console.log("Attempting login with password:", password);
+  
   const isMatch = await user.isPasswordCorrect(password);
+  // console.log("Password match result:", isMatch);
 
   if (!isMatch) {
     // Increment login attempts
@@ -233,7 +279,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
   // Generate OTP and send email
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  console.log("Login OTP ------->", otp);
+  // console.log("Login OTP ------->", otp);
   const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
   user.otp = {
@@ -244,7 +290,8 @@ const loginUser = asyncHandler(async (req, res) => {
   user.lockUntil = undefined;
 
   await user.save({ validateBeforeSave: false });
-
+  console.log("OTP saved to user record ------>",user.email);
+  console.log("OTP saved to user record ------>",user.firstName);
   try {
     // Send OTP via email or SMS based on what user has
     if (user.email && email) {
@@ -289,7 +336,13 @@ const loginUser = asyncHandler(async (req, res) => {
 // login user Api (step 2: verify OTP + issue tokens)
 const verifyLoginOtp = asyncHandler(async (req, res) => {
   const { email, phone, userId, otp } = req.body;
-
+  
+  console.log("Verify Login OTP attempt:");
+  console.log("- Email:", email);
+  console.log("- Phone:", phone);
+  console.log("- UserId:", userId);
+  console.log("- OTP received:", otp);
+  
   if (!otp) {
     throw new ApiError(400, "OTP is required");
   }
@@ -308,7 +361,17 @@ const verifyLoginOtp = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User does not exist");
   }
 
+  console.log("User found:", {
+    id: user._id,
+    email: user.email,
+    phone: user.phone,
+    hasOtp: !!user.otp,
+    otpCode: user.otp?.code,
+    otpExpires: user.otp?.expiresAt
+  });
+
   if (!user.otp?.code || !user.otp?.expiresAt) {
+    console.error("OTP not found in user record!");
     throw new ApiError(400, "No OTP request found for this user");
   }
 
@@ -610,6 +673,89 @@ const updateProfile = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, updatedUser, "Profile updated successfully"));
 });
 
+// Unlock account (for development/admin use)
+const unlockAccount = asyncHandler(async (req, res) => {
+  const { email, phone, userId } = req.body;
+
+  if (!email && !phone && !userId) {
+    throw new ApiError(400, "Email, phone, or userId is required");
+  }
+
+  const query = [];
+  if (userId) {
+    query.push({ _id: userId });
+  } else {
+    if (email) query.push({ email });
+    if (phone) query.push({ phone });
+  }
+
+  const user = await User.findOne({ $or: query });
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  // Reset lock fields only - don't trigger password rehash
+  await User.updateOne(
+    { _id: user._id },
+    {
+      $set: { loginAttempts: 0 },
+      $unset: { lockUntil: "" }
+    }
+  );
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { email: user.email, phone: user.phone },
+        "Account unlocked successfully"
+      )
+    );
+});
+
+// Reset password for testing (development only)
+const resetPasswordForTesting = asyncHandler(async (req, res) => {
+  const { email, phone, userId, newPassword } = req.body;
+
+  if (!email && !phone && !userId) {
+    throw new ApiError(400, "Email, phone, or userId is required");
+  }
+
+  if (!newPassword) {
+    throw new ApiError(400, "New password is required");
+  }
+
+  const query = [];
+  if (userId) {
+    query.push({ _id: userId });
+  } else {
+    if (email) query.push({ email });
+    if (phone) query.push({ phone });
+  }
+
+  const user = await User.findOne({ $or: query }).select("+password");
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  // Set new password (will be hashed by pre-save hook)
+  user.password = newPassword;
+  await user.save();
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { email: user.email, phone: user.phone },
+        "Password reset successfully for testing"
+      )
+    );
+});
+
 export {
   registerUser,
   verifyRegisterOtp,
@@ -623,4 +769,6 @@ export {
   changePassword,
   deleteUser,
   updateProfile,
+  unlockAccount,
+  resetPasswordForTesting,
 };

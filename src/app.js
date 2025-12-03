@@ -23,10 +23,18 @@ app.get("",(req,res) => res.json({msg:"API Is Running"}))
 import { userRoutes } from "./routes/user.routes.js";
 import { healthRoutes } from "./routes/health.routes.js";
 import { followRoutes } from "./routes/follow.routes.js";
+import postRoutes from "./routes/post.routes.js";
+import storyRoutes from "./routes/story.routes.js";
+import reelRoutes from "./routes/reel.routes.js";
+import feedRoutes from "./routes/feed.routes.js";
 
 // routes register
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/follow", followRoutes);
+app.use("/api/v1/post", postRoutes);
+app.use("/api/v1/story", storyRoutes);
+app.use("/api/v1/reel", reelRoutes);
+app.use("/api/v1/feed", feedRoutes);
 app.use(healthRoutes);
 
 //  404 route
