@@ -128,6 +128,7 @@ class EmailService {
         subject,
         html,
       });
+      console.log("info -->",info);
 
       return {
         success: true,

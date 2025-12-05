@@ -42,7 +42,7 @@ export const generateAccessAndRefreshTokens = async (userId) => {
 // register user Api (step 1: send OTP)
 const registerUser = asyncHandler(async (req, res) => {
   const { firstName, lastName, email, phone, password } = req.body;
-    console.log("Register User Called");
+  console.log("Register User Called");
   // Validate required fields
   if (!firstName?.trim() || !lastName?.trim() || !password?.trim()) {
     throw new ApiError(400, "First name, last name, and password are required");
@@ -84,9 +84,8 @@ const registerUser = asyncHandler(async (req, res) => {
   try {
     // Send OTP via email or SMS based on what's provided
     if (email) {
-      console.log("code working here");
       await emailService.sendOTPEmail(user.email, otp, "registration");
-      console.log("code afrer email send")
+
       return res.status(201).json(
         new ApiResponse(
           201,
@@ -203,12 +202,12 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
 // login user Api (step 1: credentials + send OTP)
 const loginUser = asyncHandler(async (req, res) => {
   const { email, phone, password } = req.body;
-  
+
   console.log("Login attempt with:");
   console.log("- Email:", email);
   console.log("- Phone:", phone);
   console.log("- Password:", password);
-  
+
   if (!email && !phone) {
     throw new ApiError(400, "Email or phone is required");
   }
@@ -229,26 +228,26 @@ const loginUser = asyncHandler(async (req, res) => {
   console.log("Query being executed:", JSON.stringify(query));
 
   const user = await User.findOne({
-    $or: query
+    $or: query,
   }).select("+password");
-  
+
   console.log("Found user:", {
     id: user?._id,
     email: user?.email,
     phone: user?.phone,
-    firstName: user?.firstName
+    firstName: user?.firstName,
   });
-  
+
   if (!user) {
     throw new ApiError(404, "User does not exist");
   }
-  
+
   // Verify the user matches what we're looking for
   const emailMatch = email && user.email?.toLowerCase() === email.toLowerCase();
   const phoneMatch = phone && user.phone === phone;
-  
+
   console.log("Email match:", emailMatch, "Phone match:", phoneMatch);
-  
+
   if (!emailMatch && !phoneMatch) {
     console.error("QUERY MISMATCH! Found wrong user!");
     console.error("Requested email:", email, "Found email:", user.email);
@@ -280,11 +279,7 @@ const loginUser = asyncHandler(async (req, res) => {
     );
   }
 
-  // console.log("Stored password hash:", user.password);
-  // console.log("Attempting login with password:", password);
-  
   const isMatch = await user.isPasswordCorrect(password);
-  // console.log("Password match result:", isMatch);
 
   if (!isMatch) {
     // Increment login attempts
@@ -296,9 +291,46 @@ const loginUser = asyncHandler(async (req, res) => {
     throw new ApiError(401, "Invalid user credentials");
   }
 
+  // DIRECT LOGIN - OTP COMMENTED OUT
+  // Reset login attempts on successful login
+  user.loginAttempts = 0;
+  user.lockUntil = undefined;
+  await user.save({ validateBeforeSave: false });
+
+  // Generate tokens and login directly
+  const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
+    user._id
+  );
+
+  const loggedInUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+  };
+
+  return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+      new ApiResponse(
+        200,
+        {
+          user: loggedInUser,
+          accessToken,
+          refreshToken,
+        },
+        "User logged in successfully"
+      )
+    );
+
+  /* OTP LOGIN - COMMENTED OUT FOR DIRECT LOGIN
   // Generate OTP and send email
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  // console.log("Login OTP ------->", otp);
   const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
   user.otp = {
@@ -350,9 +382,11 @@ const loginUser = asyncHandler(async (req, res) => {
       error?.message || "Failed to send OTP. Please try again."
     );
   }
+  */
 });
 
-// login user Api (step 2: verify OTP + issue tokens)
+// login user Api (step 2: verify OTP + issue tokens) - COMMENTED OUT FOR DIRECT LOGIN
+/* 
 const verifyLoginOtp = asyncHandler(async (req, res) => {
   const { email, phone, userId, otp } = req.body;
   
@@ -440,6 +474,15 @@ const verifyLoginOtp = asyncHandler(async (req, res) => {
         "User logged in successfully"
       )
     );
+});
+*/
+
+// Temporary verifyLoginOtp stub for compatibility
+const verifyLoginOtp = asyncHandler(async (req, res) => {
+  throw new ApiError(
+    501,
+    "OTP login is currently disabled. Please use direct login."
+  );
 });
 
 // logout user Api
@@ -660,11 +703,10 @@ const deleteUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, {}, "User deleted successfully"));
 });
 
-
 const updateProfile = asyncHandler(async (req, res) => {
   const userId = req.user._id;
   const { firstName, lastName, bio, profile_type, coverPhoto } = req.body;
- 
+
   // to do
   // image will upload into s3 buket or something else then extract the url and save into db
 
@@ -719,7 +761,7 @@ const unlockAccount = asyncHandler(async (req, res) => {
     { _id: user._id },
     {
       $set: { loginAttempts: 0 },
-      $unset: { lockUntil: "" }
+      $unset: { lockUntil: "" },
     }
   );
 
