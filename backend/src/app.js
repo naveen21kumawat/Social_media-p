@@ -5,8 +5,13 @@ import errorMiddleware from "./middleware/error.middleware.js";
 const app = express();
 
 app.use(cors({
-  origin: "*",                       // ❗ Any website can access your API
-  methods:["GET","POST","PUT","PATCH"]
+  origin: true, // Allow all origins in development/production
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  exposedHeaders: ["set-cookie"],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
 app.use(express.json({ limit: "16kb" }));
