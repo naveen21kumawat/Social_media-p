@@ -15,10 +15,11 @@ const errorMiddleware = (err, req, res, next) => {
 
   // Ensure response hasn't been sent already
   if (res.headersSent) {
+    console.error("Headers already sent, cannot send error response");
     return next(err);
   }
 
-  res.status(status).json({
+  const errorResponse = {
     success: false,
     statusCode: status,
     message,
@@ -26,7 +27,10 @@ const errorMiddleware = (err, req, res, next) => {
     errors: err.errors || [],
     // Optionally include stack trace (for development only)
     stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-  });
+  };
+
+  console.log("Sending error response:", JSON.stringify(errorResponse, null, 2));
+  res.status(status).json(errorResponse);
 };
 
 export default errorMiddleware;
