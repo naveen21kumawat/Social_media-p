@@ -76,6 +76,8 @@ class EmailService {
     }
   }
   async sendOTPEmail(email, otp, purpose = "verification") {
+
+    console.log("working in email");
     if (!transporter) {
       throw new Error("Email service not configured");
     }

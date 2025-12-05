@@ -84,7 +84,9 @@ const registerUser = asyncHandler(async (req, res) => {
   try {
     // Send OTP via email or SMS based on what's provided
     if (email) {
+      console.log("code working here");
       await emailService.sendOTPEmail(user.email, otp, "registration");
+      console.log("code afrer email send")
       return res.status(201).json(
         new ApiResponse(
           201,
