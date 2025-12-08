@@ -42,7 +42,6 @@ export const generateAccessAndRefreshTokens = async (userId) => {
 // register user Api (step 1: send OTP)
 const registerUser = asyncHandler(async (req, res) => {
   const { firstName, lastName, email, phone, password } = req.body;
-  console.log("Register User Called");
   // Validate required fields
   if (!firstName?.trim() || !lastName?.trim() || !password?.trim()) {
     throw new ApiError(400, "First name, last name, and password are required");
@@ -127,7 +126,6 @@ const registerUser = asyncHandler(async (req, res) => {
 // Verify registration OTP (step 2: activate account)
 const verifyRegisterOtp = asyncHandler(async (req, res) => {
   const { email, phone, userId, otp } = req.body;
-  console.log("Starting");
   if (!otp) {
     throw new ApiError(400, "OTP is required");
   }
@@ -203,10 +201,6 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
   const { email, phone, password } = req.body;
 
-  console.log("Login attempt with:");
-  console.log("- Email:", email);
-  console.log("- Phone:", phone);
-  console.log("- Password:", password);
 
   if (!email && !phone) {
     throw new ApiError(400, "Email or phone is required");

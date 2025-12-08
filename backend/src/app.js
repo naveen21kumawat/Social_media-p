@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import errorMiddleware from "./middleware/error.middleware.js";
+import morgan from "morgan"
 const app = express();
 
 app.use(cors({
@@ -19,6 +20,12 @@ app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(cookieParser());
 app.use(express.static("public"));
 
+// Serve uploaded files
+app.use("/uploads", express.static("uploads"));
+
+// HTTP request logger middleware
+app.use(morgan("dev"));
+
 // home route
 app.get("",(req,res) => res.json({msg:"API Is Running"}))
 
@@ -30,6 +37,7 @@ import postRoutes from "./routes/post.routes.js";
 import storyRoutes from "./routes/story.routes.js";
 import reelRoutes from "./routes/reel.routes.js";
 import feedRoutes from "./routes/feed.routes.js";
+import chatRoutes from "./routes/chat.routes.js";
 
 // routes register
 app.use("/api/v1/users", userRoutes);
@@ -38,6 +46,7 @@ app.use("/api/v1/post", postRoutes);
 app.use("/api/v1/story", storyRoutes);
 app.use("/api/v1/reel", reelRoutes);
 app.use("/api/v1/feed", feedRoutes);
+app.use("/api/v1/chat", chatRoutes);
 app.use(healthRoutes);
 
 //  404 route

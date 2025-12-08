@@ -75,7 +75,6 @@ const acceptFollowRequest = asyncHandler(async (req, res) => {
 
   // Find the follow request
   const followRequest = await Followers.findById(requestId);
-  console.log("Follow request found:", followRequest);
 
   if (!followRequest) {
     throw new ApiError(404, "Follow request not found");
@@ -95,13 +94,45 @@ const acceptFollowRequest = asyncHandler(async (req, res) => {
   followRequest.status = "accepted";
   await followRequest.save();
 
-  return res.status(200).json(
-    new ApiResponse(
-      200,
-      { followRequest },
-      "Follow request accepted successfully"
-    )
-  );
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { followRequest },
+        "Follow request accepted successfully"
+      )
+    );
+});
+
+// remove follow request if pending request exists
+const removeFollowRequest = asyncHandler(async (req, res) => {
+  const { requestId } = req.params;
+  const currentUserId = req.user._id;
+
+  // Find the follow request
+  const followRequest = await Followers.findById(requestId);
+
+  if (!followRequest) {
+    throw new ApiError(404, "Follow request not found");
+  }
+
+  // Verify the current user is the target of the request
+  if (followRequest.following_id.toString() !== currentUserId.toString()) {
+    throw new ApiError(403, "You can only remove requests sent to you");
+  }
+
+  // Check if already accepted
+  if (followRequest.status === "accepted") {
+    throw new ApiError(400, "Cannot remove an accepted follow request");
+  }
+
+  // Delete the follow request
+  await Followers.findByIdAndDelete(requestId);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, null, "Follow request removed successfully"));
 });
 
 // DELETE /follow/remove/:targetUserId - Unfollow or remove follower
@@ -134,13 +165,15 @@ const removeFollow = asyncHandler(async (req, res) => {
       throw new ApiError(404, "You are not following this user");
     }
 
-    return res.status(200).json(
-      new ApiResponse(
-        200,
-        { unfollowed: targetUserId },
-        "Successfully unfollowed user"
-      )
-    );
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { unfollowed: targetUserId },
+          "Successfully unfollowed user"
+        )
+      );
   } else if (action === "remove-follower") {
     // Current user wants to remove target user as a follower
     followRecord = await Followers.findOneAndDelete({
@@ -152,13 +185,15 @@ const removeFollow = asyncHandler(async (req, res) => {
       throw new ApiError(404, "This user is not following you");
     }
 
-    return res.status(200).json(
-      new ApiResponse(
-        200,
-        { removed: targetUserId },
-        "Successfully removed follower"
-      )
-    );
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { removed: targetUserId },
+          "Successfully removed follower"
+        )
+      );
   }
 });
 
@@ -185,7 +220,12 @@ const getFollowStatus = asyncHandler(async (req, res) => {
 
   let status = "not-following";
 
-  if (following && following.status === "accepted" && follower && follower.status === "accepted") {
+  if (
+    following &&
+    following.status === "accepted" &&
+    follower &&
+    follower.status === "accepted"
+  ) {
     status = "follow-back"; // Both follow each other
   } else if (following && following.status === "accepted") {
     status = "following"; // Current user follows target
@@ -200,8 +240,12 @@ const getFollowStatus = asyncHandler(async (req, res) => {
       200,
       {
         status,
-        following: following ? { id: following._id, status: following.status } : null,
-        follower: follower ? { id: follower._id, status: follower.status } : null,
+        following: following
+          ? { id: following._id, status: following.status }
+          : null,
+        follower: follower
+          ? { id: follower._id, status: follower.status }
+          : null,
       },
       "Follow status retrieved successfully"
     )
@@ -334,7 +378,9 @@ const getFollowSuggestions = asyncHandler(async (req, res) => {
       ...query,
       _id: { $nin: [...followingIds, ...mutualFollowerIds] },
     })
-      .select("firstName lastName email phone avatar profileImage bio isPrivate")
+      .select(
+        "firstName lastName email phone avatar profileImage bio isPrivate"
+      )
       .limit(remaining)
       .sort({ createdAt: -1 });
 
@@ -353,9 +399,7 @@ const getFollowSuggestions = asyncHandler(async (req, res) => {
   });
 
   const nextCursor =
-    suggestions.length > 0
-      ? suggestions[suggestions.length - 1]._id
-      : null;
+    suggestions.length > 0 ? suggestions[suggestions.length - 1]._id : null;
 
   return res.status(200).json(
     new ApiResponse(
@@ -370,11 +414,69 @@ const getFollowSuggestions = asyncHandler(async (req, res) => {
   );
 });
 
+
+const totalFollowers = asyncHandler(async (req, res) => {
+  const  userId  = req.user._id;
+  
+  console.log("req user --->",userId);
+  if (!userId) {
+    throw new ApiError(400, "User ID is required");
+  }
+
+  const count = await Followers.countDocuments({
+    following_id: userId,
+    status: "accepted",
+  });
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, { count }, "Total followers fetched successfully")
+    );
+});
+// const totalFollowers = asyncHandler(async (req, res) => {
+//   const userId = req.user?.Id;
+
+//   if (!userId) return res.status.json(new ApiError(400, "User ID not found"));
+//   const count = await Followers.countDocuments({
+//     following_id: req.params.userId,
+//     status: "accepted",
+//   });
+
+//   return res
+//     .status(200)
+//     .json(
+//       new ApiResponse(200, { count }, "Total followers fetched successfully")
+//     );
+// });
+
+const totalFollowing = asyncHandler(async (req, res) => {
+  const  userId  = req.user._id;
+
+  if (!userId) {
+    throw new ApiError(400, "User ID is required");
+  }
+
+  const count = await Followers.countDocuments({
+    follower_id: userId,
+    status: "accepted",
+  });
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, { count }, "Total following fetched successfully")
+    );
+});
+
 export {
   sendFollowRequest,
   acceptFollowRequest,
   removeFollow,
+  removeFollowRequest,
   getFollowStatus,
   followBack,
   getFollowSuggestions,
+  totalFollowers,
+  totalFollowing,
 };
