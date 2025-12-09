@@ -8,11 +8,12 @@ import {
   commentOnReel,
 } from "../controllers/reel.controller.js";
 import { verifyJwt } from "../middleware/auth.middleware.js";
+import { uploadSingle, handleUploadError } from "../middleware/upload.middleware.js";
 
 const router = Router();
 
 // Reel routes
-router.route("/upload").post(verifyJwt, uploadReel);
+router.route("/upload").post(verifyJwt, uploadSingle, handleUploadError, uploadReel);
 router.route("/delete/:reelId").delete(verifyJwt, deleteReel);
 router.route("/details/:reelId").get(getReelDetails);
 router.route("/like/:reelId").post(verifyJwt, likeReel);

@@ -55,15 +55,27 @@ const userSchema = new Schema(
 
     status: {
       type: String,
-      enum: ["active", "inactive", "suspended", "blocked"],
+      enum: ["active", "inactive", "suspended", "blocked", "banned"],
       default: "active",
     },
 
+    // Verification status
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
 
+    // Ban details
+    banReason: { type: String },
+    banUntil: { type: Date },
 
     lastLogin: { type: Date },
+    lastActive: { type: Date },
     loginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date },
+    
+    // Username
+    username: { type: String, unique: true, sparse: true },
 
     // OTP for verification (registration/login)
     otp: {

@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import errorMiddleware from "./middleware/error.middleware.js";
+import { checkMaintenanceMode } from "./middleware/maintenance.middleware.js";
 import morgan from "morgan"
 const app = express();
 
@@ -26,6 +27,9 @@ app.use("/uploads", express.static("uploads"));
 // HTTP request logger middleware
 app.use(morgan("dev"));
 
+// Maintenance mode check (must be before routes)
+app.use(checkMaintenanceMode);
+
 // home route
 app.get("",(req,res) => res.json({msg:"API Is Running"}))
 
@@ -38,6 +42,9 @@ import storyRoutes from "./routes/story.routes.js";
 import reelRoutes from "./routes/reel.routes.js";
 import feedRoutes from "./routes/feed.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
+import systemRoutes from "./routes/system.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
 
 // routes register
 app.use("/api/v1/users", userRoutes);
@@ -47,6 +54,9 @@ app.use("/api/v1/story", storyRoutes);
 app.use("/api/v1/reel", reelRoutes);
 app.use("/api/v1/feed", feedRoutes);
 app.use("/api/v1/chat", chatRoutes);
+app.use("/api/v1/notifications", notificationRoutes);
+app.use("/api/v1/system", systemRoutes);
+app.use("/api/v1/admin", adminRoutes);
 app.use(healthRoutes);
 
 //  404 route

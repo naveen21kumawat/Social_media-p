@@ -4,22 +4,39 @@ import { Comment } from "../models/comment.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asynHandler.js";
+import { uploadOnCloudinary } from "../utils/cloudinary.js";
 
 // Upload a reel
 export const uploadReel = asyncHandler(async (req, res) => {
-  const { media, caption, music_id, tags } = req.body;
-  const userId = req.user._id;
+  const { caption, music_id, tags, thumbnail, duration, width, height } = req.body;
+  const userId = req.user?._id;
 
-  if (!media || !media.url) {
-    throw new ApiError(400, "Media file is required");
+  if (!req.file) {
+    throw new ApiError(400, "Video file is required");
   }
+
+  // Upload video to Cloudinary
+  const videoUpload = await uploadOnCloudinary(req.file.path);
+
+  if (!videoUpload) {
+    throw new ApiError(500, "Failed to upload video to Cloudinary");
+  }
+
+  // Prepare media object
+  const media = {
+    url: videoUpload.secure_url,
+    thumbnail: thumbnail || videoUpload.secure_url.replace(/\.[^.]+$/, '.jpg'), // Auto-generate thumbnail
+    duration: duration || videoUpload.duration,
+    width: width || videoUpload.width,
+    height: height || videoUpload.height,
+  };
 
   const reel = await Reel.create({
     user_id: userId,
     media,
     caption,
     music_id,
-    tags,
+    tags: tags ? JSON.parse(tags) : [],
   });
 
   return res

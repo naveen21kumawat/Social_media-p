@@ -2,15 +2,36 @@ import { Story } from "../models/story.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asynHandler.js";
+import { uploadOnCloudinary } from "../utils/cloudinary.js";
 
 // Upload a story
 export const uploadStory = asyncHandler(async (req, res) => {
-  const { media, reply_settings, privacy } = req.body;
+  const { reply_settings, privacy, duration, width, height } = req.body;
   const userId = req.user._id;
 
-  if (!media || !media.url) {
-    throw new ApiError(400, "Media file is required");
+  if (!req.file) {
+    throw new ApiError(400, "Media file (image/video) is required");
   }
+
+  // Upload media to Cloudinary
+  const mediaUpload = await uploadOnCloudinary(req.file.path);
+
+  if (!mediaUpload) {
+    throw new ApiError(500, "Failed to upload media to Cloudinary");
+  }
+
+  // Determine media type
+  const mediaType = mediaUpload.resource_type === "video" ? "video" : "image";
+
+  // Prepare media object
+  const media = {
+    url: mediaUpload.secure_url,
+    type: mediaType,
+    thumbnail: mediaUpload.secure_url,
+    duration: duration || mediaUpload.duration,
+    width: width || mediaUpload.width,
+    height: height || mediaUpload.height,
+  };
 
   // Set expiry to 24 hours from now
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);

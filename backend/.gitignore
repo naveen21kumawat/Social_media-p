@@ -1,3 +1,6 @@
+# Uploads folder - don't commit user uploaded files
+uploads/
+
 # Logs
 logs
 *.log
