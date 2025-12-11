@@ -10,6 +10,8 @@ import {
   sharePost,
   savePost,
   reportPost,
+  getCurrentUserPosts,
+  totalPostCount
 } from "../controllers/post.controller.js";
 import { verifyJwt } from "../middleware/auth.middleware.js";
 import { uploadMultiple, handleUploadError } from "../middleware/upload.middleware.js";
@@ -30,5 +32,11 @@ router.route("/comment/:commentId").delete(verifyJwt, deleteComment);
 router.route("/share/:postId").post(verifyJwt, sharePost);
 router.route("/save/:postId").post(verifyJwt, savePost);
 router.route("/report/:postId").post(verifyJwt, reportPost);
+
+router.route("/getCurrentUserPosts").get(verifyJwt, getCurrentUserPosts);
+
+
+router.route("/totalPostCount").get(verifyJwt, totalPostCount);
+
 
 export default router;

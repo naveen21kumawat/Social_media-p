@@ -201,7 +201,6 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
   const { email, phone, password } = req.body;
 
-
   if (!email && !phone) {
     throw new ApiError(400, "Email or phone is required");
   }
@@ -580,12 +579,33 @@ const forgotPassword = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Email or phone is required");
   }
 
+  // Build query properly - only include fields that are provided
+  const query = [];
+  if (email) {
+    query.push({ email: email.toLowerCase().trim() });
+  }
+  if (phone) {
+    query.push({ phone: phone.trim() });
+  }
+
   const user = await User.findOne({
-    $or: [{ email }, { phone }],
+    $or: query,
   });
 
   if (!user) {
-    throw new ApiError(404, "User not found");
+    throw new ApiError(404, "User not found with this email or phone");
+  }
+
+  // Verify the user matches what we're looking for
+  const emailMatch =
+    email && user.email?.toLowerCase() === email.toLowerCase().trim();
+  const phoneMatch = phone && user.phone === phone.trim();
+
+  if (!emailMatch && !phoneMatch) {
+    console.error("QUERY MISMATCH! Found wrong user!");
+    console.error("Requested email:", email, "Found email:", user.email);
+    console.error("Requested phone:", phone, "Found phone:", user.phone);
+    throw new ApiError(404, "User not found with this email or phone");
   }
 
   // Generate JWT reset token (valid for 15 minutes)
@@ -600,17 +620,17 @@ const forgotPassword = asyncHandler(async (req, res) => {
   ) {
     throw new ApiError(500, "Email service not configured");
   }
-  const resetUrl = `${
-    process.env.FRONTEND_URL || "http://localhost:4444"
-  }/api/v1/users/reset-password?token=${resetToken}`;
-  await EmailService.sendPasswordResetEmail(user.email, resetUrl);
 
-  return res.status(200).json(
+  const resetUrl = `${
+    process.env.FRONTEND_URL || "http://localhost:3000"
+  }/reset-password?token=${resetToken}`;
+  
+  await EmailService.sendPasswordResetEmail(user.email, resetUrl);  return res.status(200).json(
     new ApiResponse(
       200,
       {
         message: "Password reset link sent to your email",
-        // resetToken, // For testing; in production, do not send token in response
+        email: user.email, // Return the actual email for confirmation
         expiresIn: 900,
       },
       "Password reset link sent"

@@ -45,6 +45,7 @@ import chatRoutes from "./routes/chat.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import systemRoutes from "./routes/system.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
+import searchRoutes from "./routes/search.routes.js";
 
 // routes register
 app.use("/api/v1/users", userRoutes);
@@ -57,6 +58,7 @@ app.use("/api/v1/chat", chatRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/system", systemRoutes);
 app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/search", searchRoutes);
 app.use(healthRoutes);
 
 //  404 route

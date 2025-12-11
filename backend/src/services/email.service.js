@@ -32,7 +32,6 @@ class EmailService {
     if (!transporter) {
       throw new Error("Email service not configured");
     }
-
     const subject = "Reset your password - Social Media ";
     const html = `
         <!DOCTYPE html>
@@ -70,14 +69,13 @@ class EmailService {
         subject,
         html,
       });
+
       return { success: true, messageId: info.messageId };
     } catch (error) {
       throw new Error(`Failed to send password reset email: ${error.message}`);
     }
   }
   async sendOTPEmail(email, otp, purpose = "verification") {
-
-    console.log("working in email");
     if (!transporter) {
       throw new Error("Email service not configured");
     }
@@ -128,7 +126,7 @@ class EmailService {
         subject,
         html,
       });
-      console.log("info -->",info);
+      console.log("info -->", info);
 
       return {
         success: true,

@@ -12,7 +12,7 @@ import { uploadOnCloudinary } from "../utils/cloudinary.js";
 export const uploadPost = asyncHandler(async (req, res) => {
   const { caption, tags, location, visibility } = req.body;
   const userId = req.user._id; // User who is uploading the post
-
+  console.log("post creation working -->");
   // Get uploaded files from multer (temporary local files)
   const files = req.files;
 
@@ -426,4 +426,48 @@ export const reportPost = asyncHandler(async (req, res) => {
   return res
     .status(201)
     .json(new ApiResponse(201, report, "Post reported successfully"));
+});
+
+export const getCurrentUserPosts = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+
+  const posts = await Post.find({ user_id: userId, is_deleted: false })
+    .sort({ createdAt: -1 })
+    .populate("user_id", "firstName lastName username profilePicture");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, posts, "User posts fetched successfully"));
+});
+
+export const totalPostCount = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+
+  const count = await Post.countDocuments({
+    user_id: userId,
+    is_deleted: false,
+  });
+  // todo
+
+  // total followeres count
+  const followersCount = await Followers.countDocuments({
+    following_id: userId,
+    status: "accepted",
+  });
+
+  // total following count
+  const followingCount = await Followers.countDocuments({
+    follower_id: userId,
+    status: "accepted",
+  });
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { totalPostCount: count },
+        "Total post count fetched successfully"
+      )
+    );
 });
