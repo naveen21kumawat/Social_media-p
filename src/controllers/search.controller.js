@@ -151,13 +151,21 @@ export const searchUsers = asyncHandler(async (req, res) => {
   const { query, limit = 20, page = 1 } = req.query;
   const userId = req.user?._id;
 
-  if (!query || query.trim().length < 2) {
-    throw new ApiError(400, "Search query must be at least 2 characters");
+  if (!query || query.trim().length < 1) {
+    throw new ApiError(400, "Search query is required");
   }
 
   const searchLimit = Math.min(parseInt(limit), 50);
   const skip = (parseInt(page) - 1) * searchLimit;
   const searchRegex = new RegExp(query, "i");
+
+  // Debug: Check total users in DB
+  const totalActiveUsers = await User.countDocuments({ status: "active" });
+  console.log("Total active users in DB:", totalActiveUsers);
+
+  // Debug: Find any user with firstName containing the search term
+  const testUsers = await User.find({ firstName: searchRegex }).select("firstName lastName username status").limit(5).lean();
+  console.log("Test search results:", testUsers);
 
   const users = await User.find({
     $or: [
@@ -171,6 +179,16 @@ export const searchUsers = asyncHandler(async (req, res) => {
     .skip(skip)
     .limit(searchLimit)
     .lean();
+
+  // Add full name to each user
+  const usersWithFullName = users.map(user => ({
+    ...user,
+    fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+  }));
+
+  console.log("Search query:", query);
+  console.log("Search regex:", searchRegex);
+  console.log("Found users:", usersWithFullName.length);
 
   const total = await User.countDocuments({
     $or: [
@@ -189,7 +207,7 @@ export const searchUsers = asyncHandler(async (req, res) => {
       200,
       {
         query,
-        users,
+        users: usersWithFullName,
         pagination: {
           current_page: parseInt(page),
           total_pages: Math.ceil(total / searchLimit),

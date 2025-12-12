@@ -8,7 +8,9 @@ import {
   followBack,
   getFollowSuggestions,
   totalFollowers,
-  totalFollowing
+  totalFollowing,
+  getFollowers,
+  getFollowing,
 } from "../controllers/follow.controller.js";
 import { verifyJwt } from "../middleware/auth.middleware.js";
 
@@ -39,9 +41,11 @@ router.post("/follow-back/:targetUserId", followBack);
 router.get("/suggestions", getFollowSuggestions);
 
 // Get total followers || following
-router.route("/total-followers").get(totalFollowers)
+router.route("/total-followers").get(totalFollowers);
 router.route("/total-following").get(totalFollowing);
 
-// .get("/total-following", totalFollowing);
+// Get followers and following lists
+router.get("/followers/:userId", getFollowers);
+router.get("/following/:userId", getFollowing);
 
 export { router as followRoutes };
