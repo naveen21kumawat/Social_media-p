@@ -16,7 +16,7 @@ import {
   resetPasswordForTesting,
   getUserProfile,
 } from "../controllers/user.controller.js";
-import { verifyJwt as verifyRoute } from "../middleware/auth.middleware.js"; // use this to protect routes
+import { verifyJwt, verifyJwt as verifyRoute } from "../middleware/auth.middleware.js"; // use this to protect routes
 
 const router = express.Router();
 
@@ -32,7 +32,7 @@ router.route("/unlock-account").post(unlockAccount); // For development/testing
 router.route("/reset-password-testing").post(resetPasswordForTesting); // For development/testing
 
 // Public profile routes
-router.route("/profile/:userId").get(getUserProfile);
+router.route("/profile/:userId").get(verifyJwt,getUserProfile);
 
 // protected routes
 router.route("/logout").post(verifyRoute, logOutUser);

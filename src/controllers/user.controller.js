@@ -904,6 +904,35 @@ const getUserProfile = asyncHandler(async (req, res) => {
     is_deleted: false,
   });
 
+  // Check if current user is following this profile user
+  const currentUserId = req.user?._id; // Get from auth middleware
+
+  let isFollowing = false;
+  let isPending = false;
+
+  if (currentUserId && currentUserId.toString() !== userId.toString()) {
+    // 🔍 DEBUG: Check what records exist
+    const allFollowRecords = await Followers.find({
+      follower_id: currentUserId,
+    });
+    console.log("🔍 All follow records for current user:", allFollowRecords);
+
+    // Check if there's a follow relationship
+    const followRecord = await Followers.findOne({
+      follower_id: currentUserId,
+      following_id: user._id,
+    });
+
+    if (followRecord) {
+      console.log("🔍 Follow record status:", followRecord.status);
+      if (followRecord.status === "accepted") {
+        isFollowing = true;
+      } else if (followRecord.status === "pending") {
+        isPending = true;
+      }
+    }
+  }
+
   // Build response
   const profileData = {
     _id: user._id,
@@ -921,8 +950,8 @@ const getUserProfile = asyncHandler(async (req, res) => {
     isVerified: user.isVerified,
     profile_type: user.profile_type,
     isPrivate: user.isPrivate,
-    isFollowing: false,
-    isPending: false,
+    isFollowing: isFollowing,
+    isPending: isPending,
   };
 
   return res
