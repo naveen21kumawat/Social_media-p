@@ -1,4 +1,6 @@
 import { User } from "../models/user.model.js";
+import { Followers } from "../models/followers.model.js";
+import { Post } from "../models/post.model.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
 import asyncHandler from "../utils/asynHandler.js";
@@ -516,9 +518,40 @@ const logOutUser = asyncHandler(async (req, res) => {
 
 // Get current user
 const getCurrentUser = asyncHandler(async (req, res) => {
-  return res
-    .status(200)
-    .json(new ApiResponse(200, req.user, "User fetched successfully"));
+  // to do all information --
+
+  const user = await User.findById(req.user._id).select(
+    "-password -refreshToken"
+  );
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+  const followersCount = await Followers.countDocuments({
+      following_id: user._id,
+      status: "accepted",
+    }),
+    followingCount = await Followers.countDocuments({
+      follower_id: user._id,
+      status: "accepted",
+    }),
+    totalPosts = await Post.countDocuments({
+      user_id: user._id,
+      is_deleted: false,
+    });
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        data: req.user,
+        followersCount,
+        followingCount,
+        totalPosts,
+      },
+      "User fetched successfully"
+    )
+  );
 });
 
 // Refresh access token
@@ -624,8 +657,9 @@ const forgotPassword = asyncHandler(async (req, res) => {
   const resetUrl = `${
     process.env.FRONTEND_URL || "http://localhost:3000"
   }/reset-password?token=${resetToken}`;
-  
-  await EmailService.sendPasswordResetEmail(user.email, resetUrl);  return res.status(200).json(
+
+  await EmailService.sendPasswordResetEmail(user.email, resetUrl);
+  return res.status(200).json(
     new ApiResponse(
       200,
       {
@@ -831,6 +865,73 @@ const resetPasswordForTesting = asyncHandler(async (req, res) => {
     );
 });
 
+// Get user profile by userId
+const getUserProfile = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+
+  if (!userId) {
+    throw new ApiError(400, "User ID is required");
+  }
+
+  // Find user by userId
+  const user = await User.findById(userId).select(
+    "firstName lastName username bio avatar profileImage coverPhoto isVerified profile_type isPrivate status"
+  );
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  if (user.status !== "active") {
+    throw new ApiError(403, "This account is not available");
+  }
+
+  // Count followers
+  const followersCount = await Followers.countDocuments({
+    following_id: user._id,
+    status: "accepted",
+  });
+
+  // Count following
+  const followingCount = await Followers.countDocuments({
+    follower_id: user._id,
+    status: "accepted",
+  });
+
+  // Count posts
+  const postsCount = await Post.countDocuments({
+    user_id: user._id,
+    is_deleted: false,
+  });
+
+  // Build response
+  const profileData = {
+    _id: user._id,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    fullName: `${user.firstName} ${user.lastName}`,
+    username: user.username,
+    bio: user.bio || "User bio here",
+    profilePicture: user.profileImage || user.avatar,
+    avatar: user.avatar,
+    coverPhoto: user.coverPhoto,
+    followersCount,
+    followingCount,
+    postsCount,
+    isVerified: user.isVerified,
+    profile_type: user.profile_type,
+    isPrivate: user.isPrivate,
+    isFollowing: false,
+    isPending: false,
+  };
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, profileData, "User profile retrieved successfully")
+    );
+});
+
 export {
   registerUser,
   verifyRegisterOtp,
@@ -846,4 +947,5 @@ export {
   updateProfile,
   unlockAccount,
   resetPasswordForTesting,
+  getUserProfile,
 };

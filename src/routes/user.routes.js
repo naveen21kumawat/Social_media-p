@@ -13,7 +13,8 @@ import {
   deleteUser,
   updateProfile,
   unlockAccount,
-  resetPasswordForTesting
+  resetPasswordForTesting,
+  getUserProfile,
 } from "../controllers/user.controller.js";
 import { verifyJwt as verifyRoute } from "../middleware/auth.middleware.js"; // use this to protect routes
 
@@ -29,6 +30,9 @@ router.route("/forgot-password").post(forgotPassword);
 router.route("/reset-password").post(resetPassword);
 router.route("/unlock-account").post(unlockAccount); // For development/testing
 router.route("/reset-password-testing").post(resetPasswordForTesting); // For development/testing
+
+// Public profile routes
+router.route("/profile/:userId").get(getUserProfile);
 
 // protected routes
 router.route("/logout").post(verifyRoute, logOutUser);

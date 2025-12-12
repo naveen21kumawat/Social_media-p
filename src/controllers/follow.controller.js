@@ -469,6 +469,156 @@ const totalFollowing = asyncHandler(async (req, res) => {
     );
 });
 
+// GET /follow/followers/:userId - Get list of followers
+const getFollowers = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const { page = 1, limit = 20 } = req.query;
+  const currentUserId = req.user._id;
+
+  if (!userId) {
+    throw new ApiError(400, "User ID is required");
+  }
+
+  const pageNum = parseInt(page);
+  const limitNum = Math.min(parseInt(limit), 50);
+  const skip = (pageNum - 1) * limitNum;
+
+  // Get total count
+  const total = await Followers.countDocuments({
+    following_id: userId,
+    status: "accepted",
+  });
+
+  // Get followers with user details
+  const followerRecords = await Followers.find({
+    following_id: userId,
+    status: "accepted",
+  })
+    .populate("follower_id", "firstName lastName username avatar profileImage bio isVerified")
+    .skip(skip)
+    .limit(limitNum)
+    .sort("-created_at")
+    .lean();
+
+  // Map followers and check if current user follows them back
+  const followers = await Promise.all(
+    followerRecords.map(async (record) => {
+      const follower = record.follower_id;
+      
+      // Check if current user follows this follower back
+      const isFollowingBack = await Followers.findOne({
+        follower_id: currentUserId,
+        following_id: follower._id,
+        status: "accepted",
+      });
+
+      return {
+        _id: follower._id,
+        firstName: follower.firstName,
+        lastName: follower.lastName,
+        fullName: `${follower.firstName} ${follower.lastName}`,
+        username: follower.username,
+        profilePicture: follower.profileImage || follower.avatar,
+        avatar: follower.avatar,
+        bio: follower.bio,
+        isVerified: follower.isVerified,
+        isFollowing: !!isFollowingBack,
+      };
+    })
+  );
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        followers,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          hasMore: skip + followers.length < total,
+        },
+      },
+      "Followers retrieved successfully"
+    )
+  );
+});
+
+// GET /follow/following/:userId - Get list of users being followed
+const getFollowing = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const { page = 1, limit = 20 } = req.query;
+  const currentUserId = req.user._id;
+
+  if (!userId) {
+    throw new ApiError(400, "User ID is required");
+  }
+
+  const pageNum = parseInt(page);
+  const limitNum = Math.min(parseInt(limit), 50);
+  const skip = (pageNum - 1) * limitNum;
+
+  // Get total count
+  const total = await Followers.countDocuments({
+    follower_id: userId,
+    status: "accepted",
+  });
+
+  // Get following with user details
+  const followingRecords = await Followers.find({
+    follower_id: userId,
+    status: "accepted",
+  })
+    .populate("following_id", "firstName lastName username avatar profileImage bio isVerified")
+    .skip(skip)
+    .limit(limitNum)
+    .sort("-created_at")
+    .lean();
+
+  // Map following users and check if current user follows them
+  const following = await Promise.all(
+    followingRecords.map(async (record) => {
+      const followedUser = record.following_id;
+      
+      // Check if current user follows this person
+      const isFollowing = await Followers.findOne({
+        follower_id: currentUserId,
+        following_id: followedUser._id,
+        status: "accepted",
+      });
+
+      return {
+        _id: followedUser._id,
+        firstName: followedUser.firstName,
+        lastName: followedUser.lastName,
+        fullName: `${followedUser.firstName} ${followedUser.lastName}`,
+        username: followedUser.username,
+        profilePicture: followedUser.profileImage || followedUser.avatar,
+        avatar: followedUser.avatar,
+        bio: followedUser.bio,
+        isVerified: followedUser.isVerified,
+        isFollowing: !!isFollowing,
+      };
+    })
+  );
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        following,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          hasMore: skip + following.length < total,
+        },
+      },
+      "Following list retrieved successfully"
+    )
+  );
+});
+
 export {
   sendFollowRequest,
   acceptFollowRequest,
@@ -479,4 +629,6 @@ export {
   getFollowSuggestions,
   totalFollowers,
   totalFollowing,
+  getFollowers,
+  getFollowing,
 };
