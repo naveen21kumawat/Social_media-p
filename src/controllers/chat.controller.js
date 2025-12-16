@@ -13,6 +13,123 @@ import {
 } from "../utils/encryption.js";
 import { getIO } from "../socket/socket.js";
 
+// 1.5. Get all threads for current user (NEW)
+export const getAllThreads = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const { limit = 50, skip = 0, sortBy = "lastMessageAt" } = req.query;
+
+  // Find all threads where user is a participant
+  const threads = await ChatThread.find({
+    participants: userId,
+    isDeleted: false,
+  })
+    .populate({
+      path: "participants",
+      select: "firstName lastName username profilePicture isOnline",
+      match: { _id: { $ne: userId } }, // Exclude current user
+    })
+    .populate({
+      path: "lastMessage",
+      select: "text encryptedContent media createdAt senderId isDeleted",
+      populate: {
+        path: "senderId",
+        select: "firstName lastName username",
+      },
+    })
+    .sort({ [sortBy]: -1 })
+    .limit(parseInt(limit))
+    .skip(parseInt(skip))
+    .lean();
+
+  // Transform threads to include participant info and decrypt last message
+  const transformedThreads = threads.map((thread) => {
+    const otherParticipant = thread.participants?.[0] || null;
+    const lastMessage = thread.lastMessage;
+    const userIdStr = userId.toString();
+
+    // Decrypt last message if exists
+    let lastMessageText = null;
+    if (lastMessage && !lastMessage.isDeleted) {
+      if (lastMessage.encryptedContent) {
+        try {
+          lastMessageText = decryptMessage(lastMessage.encryptedContent);
+        } catch (error) {
+          console.error("Decryption error for last message:", error);
+          lastMessageText = "[Unable to decrypt]";
+        }
+      } else if (lastMessage.text) {
+        lastMessageText = lastMessage.text;
+      }
+    }
+
+    // Handle Map fields - with lean() they come as plain objects
+    let unreadCount = 0;
+    let isArchived = false;
+    let isPinned = false;
+
+    if (thread.unreadCount) {
+      // If it's a Map object, use .get(), otherwise access as plain object
+      unreadCount = typeof thread.unreadCount.get === 'function' 
+        ? (thread.unreadCount.get(userIdStr) || 0)
+        : (thread.unreadCount[userIdStr] || 0);
+    }
+
+    if (thread.isArchived) {
+      isArchived = typeof thread.isArchived.get === 'function'
+        ? (thread.isArchived.get(userIdStr) || false)
+        : (thread.isArchived[userIdStr] || false);
+    }
+
+    if (thread.isPinned) {
+      isPinned = typeof thread.isPinned.get === 'function'
+        ? (thread.isPinned.get(userIdStr) || false)
+        : (thread.isPinned[userIdStr] || false);
+    }
+
+    return {
+      _id: thread._id,
+      participant: otherParticipant,
+      lastMessage: lastMessage
+        ? {
+            text: lastMessageText,
+            media: lastMessage.media,
+            createdAt: lastMessage.createdAt,
+            senderId: lastMessage.senderId,
+            isDeleted: lastMessage.isDeleted,
+          }
+        : null,
+      lastMessageAt: thread.lastMessageAt,
+      unreadCount,
+      isArchived,
+      isPinned,
+      isBlocked: thread.isBlocked,
+      blockedBy: thread.blockedBy,
+      createdAt: thread.createdAt,
+      updatedAt: thread.updatedAt,
+    };
+  });
+
+  // Get total count for pagination
+  const totalCount = await ChatThread.countDocuments({
+    participants: userId,
+    isDeleted: false,
+  });
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        threads: transformedThreads,
+        total: totalCount,
+        limit: parseInt(limit),
+        skip: parseInt(skip),
+        hasMore: parseInt(skip) + parseInt(limit) < totalCount,
+      },
+      "Threads fetched successfully"
+    )
+  );
+});
+
 // 1. Create or fetch chat thread
 export const createOrGetThread = asyncHandler(async (req, res) => {
   const userId = req.user._id;
@@ -33,6 +150,8 @@ export const createOrGetThread = asyncHandler(async (req, res) => {
     participants: { $all: [userId, receiverId] },
     isDeleted: false,
   }).populate("participants", "firstName lastName username profilePicture");
+
+  const isNewThread = !thread;
 
   if (!thread) {
     // Create new thread
@@ -56,6 +175,46 @@ export const createOrGetThread = asyncHandler(async (req, res) => {
       "participants",
       "firstName lastName username profilePicture"
     );
+  }
+
+  // Emit socket event for new thread to both users
+  if (isNewThread) {
+    const io = getIO();
+    if (io) {
+      const threadData = {
+        _id: thread._id,
+        participant: thread.participants.find(p => p._id.toString() !== userId.toString()),
+        lastMessage: null,
+        lastMessageAt: thread.lastMessageAt,
+        unreadCount: 0,
+        isArchived: false,
+        isPinned: false,
+        isBlocked: false,
+      };
+
+      // Notify the receiver about the new thread
+      io.to(receiverId.toString()).emit("newThread", {
+        thread: threadData,
+        threadId: thread._id,
+      });
+
+      // Notify the sender (current user) about the new thread
+      const senderThreadData = {
+        _id: thread._id,
+        participant: thread.participants.find(p => p._id.toString() !== userId.toString()),
+        lastMessage: null,
+        lastMessageAt: thread.lastMessageAt,
+        unreadCount: 0,
+        isArchived: false,
+        isPinned: false,
+        isBlocked: false,
+      };
+      
+      io.to(userId.toString()).emit("newThread", {
+        thread: senderThreadData,
+        threadId: thread._id,
+      });
+    }
   }
 
   return res
@@ -324,9 +483,9 @@ export const getMessages = asyncHandler(async (req, res) => {
     query.createdAt = { $gt: new Date(since) };
   }
 
-  // Fetch messages
+  // Fetch messages - sorted in ascending order (oldest first)
   const messages = await ChatMessage.find(query)
-    .sort({ createdAt: -1 })
+    .sort({ createdAt: 1 })
     .limit(parseInt(limit))
     .populate("senderId", "firstName lastName username profilePicture")
     .populate("replyTo", "encryptedContent senderId createdAt");
@@ -576,6 +735,7 @@ export const endCall = asyncHandler(async (req, res) => {
 });
 
 export default {
+  getAllThreads,
   createOrGetThread,
   sendMessage,
   deleteMessage,

@@ -1,7 +1,7 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import { ChatMessage } from "../models/chatMessage.model.js";
-
+import { User } from "../models/user.model.js";
 let io;
 
 export const initializeSocket = (server) => {
@@ -31,21 +31,36 @@ export const initializeSocket = (server) => {
   });
 
   io.on("connection", (socket) => {
-    console.log(`User connected: ${socket.userId}`);
+    console.log(`✅ User connected: ${socket.userId}, Socket ID: ${socket.id}`);
 
     // Join user's personal room
     socket.join(socket.userId);
 
+    // Emit user online event to all connected users
+    io.emit("userOnline", { userId: socket.userId });
+
     // Join thread room
     socket.on("joinThread", (threadId) => {
       socket.join(threadId);
-      console.log(`User ${socket.userId} joined thread ${threadId}`);
+      console.log(`🔗 User ${socket.userId} joined thread ${threadId}`);
     });
 
     // Leave thread room
     socket.on("leaveThread", (threadId) => {
       socket.leave(threadId);
-      console.log(`User ${socket.userId} left thread ${threadId}`);
+      console.log(`🔓 User ${socket.userId} left thread ${threadId}`);
+    });
+
+    // Listen for user online status
+    socket.on("userOnline", (data) => {
+      console.log(`🟢 User marked as online: ${socket.userId}`);
+      io.emit("userOnline", { userId: socket.userId });
+    });
+
+    // Listen for user offline status
+    socket.on("userOffline", (data) => {
+      console.log(`⚫ User marked as offline: ${socket.userId}`);
+      io.emit("userOffline", { userId: socket.userId });
     });
 
     // Typing indicator
@@ -82,54 +97,138 @@ export const initializeSocket = (server) => {
           });
         }
       } catch (error) {
-        console.error("Message delivery error:", error);
+        console.error("❌ Message delivery error:", error);
       }
     });
 
-    // WebRTC signaling for voice/video calls
-    socket.on("callOffer", ({ callId, receiverId, offer, encryptionKey }) => {
-      io.to(receiverId).emit("callOffer", {
-        callId,
-        callerId: socket.userId,
-        offer,
-        encryptionKey,
-      });
-    });
+    // ============================================
+    // VOICE CALL SIGNALING (Matches Frontend)
+    // ============================================
 
-    socket.on("callAnswer", ({ callId, callerId, answer }) => {
-      io.to(callerId).emit("callAnswer", {
-        callId,
-        receiverId: socket.userId,
-        answer,
-      });
-    });
+// In your backend socket file, this should be the initiateCall handler:
 
-    socket.on("iceCandidate", ({ callId, receiverId, candidate }) => {
-      io.to(receiverId).emit("iceCandidate", {
-        callId,
-        senderId: socket.userId,
-        candidate,
-      });
+socket.on("initiateCall", async ({ recipientId, threadId }) => {
+  console.log(`📞 Call initiated by ${socket.userId} to ${recipientId}, thread: ${threadId}`);
+  
+  try {
+    // Fetch caller's user info to send with the notification
+    const callerUser = await User.findById(socket.userId).select('firstName lastName username profilePicture avatar');
+    
+    // Send incoming call notification to recipient with caller info
+    io.to(recipientId).emit("incomingCall", {
+      callerId: socket.userId,
+      threadId: threadId,
+      callerInfo: {
+        name: callerUser?.firstName || callerUser?.lastName || callerUser?.username || "Unknown User",
+        avatar: callerUser?.profilePicture || callerUser?.avatar || "👤",
+      },
+      timestamp: new Date(),
     });
-
-    socket.on("callRejected", ({ callId, callerId, reason }) => {
-      io.to(callerId).emit("callRejected", {
-        callId,
-        receiverId: socket.userId,
-        reason: reason || "declined",
-      });
+    
+    console.log(`✅ Call notification sent with caller info:`, {
+      name: callerUser?.firstName || callerUser?.username,
+      avatar: callerUser?.profilePicture || "👤"
     });
-
-    socket.on("callAccepted", ({ callId, callerId }) => {
+  } catch (error) {
+    console.error("❌ Error fetching caller info:", error);
+    // Fallback - send without caller info
+    io.to(recipientId).emit("incomingCall", {
+      callerId: socket.userId,
+      threadId: threadId,
+      timestamp: new Date(),
+    });
+  }
+});
+    // Accept call - User B accepts the incoming call
+    socket.on("acceptCall", ({ callerId, threadId }) => {
+      console.log(`✅ Call accepted by ${socket.userId} from ${callerId}, thread: ${threadId}`);
+      
+      // Notify the caller that call was accepted
       io.to(callerId).emit("callAccepted", {
-        callId,
         receiverId: socket.userId,
+        threadId: threadId,
+      });
+    });
+
+    // Reject call - User B rejects the incoming call
+    socket.on("rejectCall", ({ callerId, threadId }) => {
+      console.log(`❌ Call rejected by ${socket.userId} from ${callerId}, thread: ${threadId}`);
+      
+      // Notify the caller that call was rejected
+      io.to(callerId).emit("callRejected", {
+        receiverId: socket.userId,
+        threadId: threadId,
+      });
+    });
+
+    // End call - Either party ends the active call
+    socket.on("endCall", ({ recipientId, threadId }) => {
+      console.log(`📴 Call ended by ${socket.userId} with ${recipientId}, thread: ${threadId}`);
+      
+      // Notify the other party that call ended
+      io.to(recipientId).emit("callEnded", {
+        userId: socket.userId,
+        threadId: threadId,
+        endedAt: new Date(),
+      });
+    });
+
+    // ============================================
+    // WEBRTC SIGNALING (SDP Offer/Answer/ICE)
+    // ============================================
+
+    // WebRTC offer - Send WebRTC offer for peer connection
+    socket.on("offer", ({ recipientId, offer }) => {
+      console.log(`📤 WebRTC offer sent from ${socket.userId} to ${recipientId}`);
+      
+      io.to(recipientId).emit("offer", {
+        callerId: socket.userId,
+        offer: offer,
+      });
+    });
+
+
+  socket.on("typing", ({ threadId, receiverId }) => {
+  socket.to(receiverId).emit("userTyping", {
+    threadId,
+    userId: socket.userId,
+    isTyping: true,
+  });
+});
+
+socket.on("stopTyping", ({ threadId, receiverId }) => {
+  socket.to(receiverId).emit("userTyping", {
+    threadId,
+    userId: socket.userId,
+    isTyping: false,
+  });
+});
+
+    // WebRTC answer - Send WebRTC answer back to caller
+    socket.on("answer", ({ callerId, answer }) => {
+      console.log(`📥 WebRTC answer sent from ${socket.userId} to ${callerId}`);
+      
+      io.to(callerId).emit("answer", {
+        receiverId: socket.userId,
+        answer: answer,
+      });
+    });
+
+    // ICE candidate exchange for WebRTC connection
+    socket.on("iceCandidate", ({ recipientId, candidate }) => {
+      console.log(`🧊 ICE candidate sent from ${socket.userId} to ${recipientId}`);
+      
+      io.to(recipientId).emit("iceCandidate", {
+        senderId: socket.userId,
+        candidate: candidate,
       });
     });
 
     // User disconnect
     socket.on("disconnect", () => {
-      console.log(`User disconnected: ${socket.userId}`);
+      console.log(`❌ User disconnected: ${socket.userId}`);
+      // Emit user offline event to all connected users
+      io.emit("userOffline", { userId: socket.userId });
     });
   });
 
@@ -142,6 +241,8 @@ export const getIO = () => {
   }
   return io;
 };
+
+
 
 export default {
   initializeSocket,
