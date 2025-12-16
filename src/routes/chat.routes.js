@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  getAllThreads,
   createOrGetThread,
   sendMessage,
   deleteMessage,
@@ -17,6 +18,9 @@ const router = Router();
 
 // All routes require authentication
 router.use(verifyJwt);
+
+// Get all threads (NEW)
+router.route("/threads").get(getAllThreads);
 
 // Thread routes
 router.route("/thread/:receiverId").post(createOrGetThread);
