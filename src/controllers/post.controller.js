@@ -398,6 +398,67 @@ export const savePost = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, null, "Post saved successfully"));
 });
 
+
+export const getUserSavedPosts = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const { page = 1, limit = 20 } = req.query;
+
+  const skip = (page - 1) * limit;
+
+  // Find all saved posts for the user
+  const savedPosts = await Save.find({
+    user_id: userId,
+    target_type: "post",
+  })
+    .populate({
+      path: "target_id",
+      populate: {
+        path: "user_id",
+        select: "firstName lastName username profilePicture",
+      },
+    })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(parseInt(limit));
+
+  // Filter out deleted posts and map to post objects
+  const posts = savedPosts
+    .filter((save) => save.target_id && !save.target_id.is_deleted)
+    .map((save) => save.target_id);
+
+  const totalSavedPosts = await Save.countDocuments({
+    user_id: userId,
+    target_type: "post",
+  });
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        savedPosts: posts,
+        posts: posts, // For compatibility
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalSavedPosts / limit),
+          totalItems: totalSavedPosts,
+          itemsPerPage: parseInt(limit),
+        },
+      },
+      "Saved posts fetched successfully"
+    )
+  );
+});
+
+export const unsavedPost = asyncHandler(async (req,res) => {
+
+  const { postId } = req.params;
+  const userId = req.user._id;
+
+  
+})
+
+
+
 // Report a post
 export const reportPost = asyncHandler(async (req, res) => {
   const { postId } = req.params;

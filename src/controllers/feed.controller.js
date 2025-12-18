@@ -211,3 +211,4 @@ export const getUserPosts = asyncHandler(async (req, res) => {
     )
   );
 });
+

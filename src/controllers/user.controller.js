@@ -10,6 +10,9 @@ import emailService from "../services/email.service.js";
 import smsService from "../services/sms.service.js";
 import OTPService from "../services/otp.service.js";
 import EmailService from "../services/email.service.js";
+import redis from '../utils/redis.config.js';
+import bcrypt from "bcrypt";
+// import crypto from "crypto";
 
 // Utility function to generate a 6-digit OTP as string
 export function generateOTP() {
@@ -41,9 +44,11 @@ export const generateAccessAndRefreshTokens = async (userId) => {
   }
 };
 
-// register user Api (step 1: send OTP)
 const registerUser = asyncHandler(async (req, res) => {
   const { firstName, lastName, email, phone, password } = req.body;
+
+  console.log("wokring --->");
+
   // Validate required fields
   if (!firstName?.trim() || !lastName?.trim() || !password?.trim()) {
     throw new ApiError(400, "First name, last name, and password are required");
@@ -54,7 +59,7 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Either email or phone number is required");
   }
 
-  // Check if user already exists
+  // Check if user already exists in database
   const query = [];
   if (email) query.push({ email });
   if (phone) query.push({ phone });
@@ -65,59 +70,80 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(409, "User with this email or phone already exists");
   }
 
+  // Check rate limiting - prevent spam (max 3 attempts per 15 minutes)
+  const identifier = email || phone;
+  const rateLimitKey = `ratelimit:registration:${identifier}`;
+  const attemptCount = await redis.incr(rateLimitKey);
+  
+  if (attemptCount === 1) {
+    await redis.expire(rateLimitKey, 15 * 60); // 15 minutes
+  }
+  
+  if (attemptCount > 3) {
+    throw new ApiError(429, "Too many registration attempts. Please try again later.");
+  }
+
   // Generate OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
-  // Create user with pending status and OTP
-  const user = await User.create({
+  // Hash password
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // Store registration data in Redis (expires in 10 minutes)
+  const registrationData = {
     firstName,
     lastName,
-    email: email || undefined,
-    phone: phone || undefined,
-    password,
-    otp: {
-      code: hashedOtp,
-      expiresAt: new Date(Date.now() + 2 * 60 * 1000), // 2 minutes
-    },
-  });
+    email: email || null,
+    phone: phone || null,
+    hashedPassword,
+    hashedOtp,
+    otpCreatedAt: Date.now(),
+  };
 
+  const redisKey = `registration:${identifier}`;
+  await redis.setex(
+    redisKey,
+    10 * 60, // 10 minutes TTL
+    JSON.stringify(registrationData)
+  );
+
+  // Send OTP
   try {
-    // Send OTP via email or SMS based on what's provided
     if (email) {
-      await emailService.sendOTPEmail(user.email, otp, "registration");
-
-      return res.status(201).json(
+      await emailService.sendOTPEmail(email, otp, "registration");
+      
+      return res.status(200).json(
         new ApiResponse(
-          201,
+          200,
           {
             otpSent: true,
-            email: user.email,
-            userId: user._id,
+            identifier: email,
             method: "email",
+            expiresIn: 600, // 10 minutes in seconds
           },
-          "OTP sent to your email. Please verify within 2 minutes."
+          "OTP sent to your email. Please verify within 10 minutes."
         )
       );
     } else if (phone) {
-      // Send OTP via SMS
-      await smsService.sendOTP(user.phone, otp, "registration");
-      return res.status(201).json(
+      await smsService.sendOTP(phone, otp, "registration");
+      
+      return res.status(200).json(
         new ApiResponse(
-          201,
+          200,
           {
             otpSent: true,
-            phone: user.phone,
-            userId: user._id,
+            identifier: phone,
             method: "sms",
+            expiresIn: 600,
           },
-          "OTP sent to your phone. Please verify within 2 minutes."
+          "OTP sent to your phone. Please verify within 10 minutes."
         )
       );
     }
   } catch (error) {
-    // If OTP sending fails, delete the user and throw error
-    await User.findByIdAndDelete(user._id);
+    // Clean up Redis data if OTP sending fails
+    await redis.del(redisKey);
     throw new ApiError(
       500,
       error?.message || "Failed to send OTP. Please try again."
@@ -125,55 +151,77 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 });
 
-// Verify registration OTP (step 2: activate account)
+// Step 2: Verify OTP and create user
 const verifyRegisterOtp = asyncHandler(async (req, res) => {
-  const { email, phone, userId, otp } = req.body;
-  if (!otp) {
+  const { identifier, otp } = req.body; // identifier = email or phone
+
+  if (!identifier?.trim()) {
+    throw new ApiError(400, "Email or phone is required");
+  }
+
+  if (!otp?.trim()) {
     throw new ApiError(400, "OTP is required");
   }
 
-  if (!email && !phone && !userId) {
-    throw new ApiError(400, "Email, phone, or userId is required");
+  // Get registration data from Redis
+  const redisKey = `registration:${identifier}`;
+  const registrationDataJson = await redis.get(redisKey);
+
+  if (!registrationDataJson) {
+    throw new ApiError(
+      400,
+      "OTP has expired or registration session not found. Please register again."
+    );
   }
 
-  const user = userId
-    ? await User.findById(userId)
-    : await User.findOne({
-        $or: [{ email }, { phone }],
-      });
+  const registrationData = JSON.parse(registrationDataJson);
 
-  if (!user) {
-    throw new ApiError(404, "User does not exist");
-  }
-
-  if (!user.otp?.code || !user.otp?.expiresAt) {
-    throw new ApiError(400, "No OTP request found for this user");
-  }
-
-  if (user.otp.expiresAt.getTime() < Date.now()) {
-    user.otp = undefined;
-    await user.save({ validateBeforeSave: false });
+  // Check OTP expiry (3 minutes from creation)
+  const otpAge = Date.now() - registrationData.otpCreatedAt;
+  if (otpAge > 3 * 60 * 1000) {
+    await redis.del(redisKey);
     throw new ApiError(400, "OTP has expired. Please request a new one.");
   }
 
+  // Verify OTP
   const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
 
-  if (hashedOtp !== user.otp.code) {
+  if (hashedOtp !== registrationData.hashedOtp) {
     throw new ApiError(400, "Invalid OTP");
   }
 
-  // Activate user account
-  user.otp = undefined;
-  user.status = "active";
-  await user.save({ validateBeforeSave: false });
+  // Check again if user was created in the meantime (race condition)
+  const query = [];
+  if (registrationData.email) query.push({ email: registrationData.email });
+  if (registrationData.phone) query.push({ phone: registrationData.phone });
 
-  // Generate tokens for the newly registered user
+  const existingUser = await User.findOne({ $or: query });
+  if (existingUser) {
+    await redis.del(redisKey);
+    throw new ApiError(409, "User already exists");
+  }
+
+  // Create user in database
+  const user = await User.create({
+    firstName: registrationData.firstName,
+    lastName: registrationData.lastName,
+    email: registrationData.email || undefined,
+    phone: registrationData.phone || undefined,
+    password: registrationData.hashedPassword,
+    status: "active",
+  });
+
+  // Clean up Redis
+  await redis.del(redisKey);
+  await redis.del(`ratelimit:registration:${identifier}`);
+
+  // Generate tokens
   const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
     user._id
   );
 
   const createdUser = await User.findById(user._id).select(
-    "-password -refreshToken -otp"
+    "-password -refreshToken"
   );
 
   const cookieOptions = {
@@ -183,21 +231,106 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
   };
 
   return res
-    .status(200)
+    .status(201)
     .cookie("accessToken", accessToken, cookieOptions)
     .cookie("refreshToken", refreshToken, cookieOptions)
     .json(
       new ApiResponse(
-        200,
+        201,
         {
           user: createdUser,
           accessToken,
           refreshToken,
         },
-        "Account verified and activated successfully"
+        "Account created and verified successfully"
       )
     );
 });
+
+// Step 3: Resend OTP
+// const resendRegistrationOtp = asyncHandler(async (req, res) => {
+//   const { identifier } = req.body; // email or phone
+
+//   if (!identifier?.trim()) {
+//     throw new ApiError(400, "Email or phone is required");
+//   }
+
+//   // Check rate limiting for resend
+//   const resendRateLimitKey = `ratelimit:resend:${identifier}`;
+//   const resendCount = await redis.incr(resendRateLimitKey);
+  
+//   if (resendCount === 1) {
+//     await redis.expire(resendRateLimitKey, 15 * 60);
+//   }
+  
+//   if (resendCount > 3) {
+//     throw new ApiError(429, "Too many resend attempts. Please try again later.");
+//   }
+
+//   // Get existing registration data
+//   const redisKey = `registration:${identifier}`;
+//   const registrationDataJson = await redis.get(redisKey);
+
+//   if (!registrationDataJson) {
+//     throw new ApiError(
+//       404,
+//       "Registration session not found. Please start registration again."
+//     );
+//   }
+
+//   const registrationData = JSON.parse(registrationDataJson);
+
+//   // Generate new OTP
+//   const otp = Math.floor(100000 + Math.random() * 900000).toString();
+//   const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+
+//   // Update registration data with new OTP
+//   registrationData.hashedOtp = hashedOtp;
+//   registrationData.otpCreatedAt = Date.now();
+
+//   // Store updated data (refresh TTL to 10 minutes)
+//   await redis.setex(
+//     redisKey,
+//     10 * 60,
+//     JSON.stringify(registrationData)
+//   );
+
+//   // Send new OTP
+//   try {
+//     if (registrationData.email) {
+//       await emailService.sendOTPEmail(registrationData.email, otp, "registration");
+      
+//       return res.status(200).json(
+//         new ApiResponse(
+//           200,
+//           {
+//             otpSent: true,
+//             method: "email",
+//           },
+//           "New OTP sent to your email"
+//         )
+//       );
+//     } else if (registrationData.phone) {
+//       await smsService.sendOTP(registrationData.phone, otp, "registration");
+      
+//       return res.status(200).json(
+//         new ApiResponse(
+//           200,
+//           {
+//             otpSent: true,
+//             method: "sms",
+//           },
+//           "New OTP sent to your phone"
+//         )
+//       );
+//     }
+//   } catch (error) {
+//     throw new ApiError(
+//       500,
+//       error?.message || "Failed to resend OTP. Please try again."
+//     );
+//   }
+// });
 
 // login user Api (step 1: credentials + send OTP)
 const loginUser = asyncHandler(async (req, res) => {

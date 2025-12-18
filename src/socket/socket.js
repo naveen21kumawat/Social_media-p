@@ -2,6 +2,7 @@ import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import { ChatMessage } from "../models/chatMessage.model.js";
 import { User } from "../models/user.model.js";
+
 let io;
 
 export const initializeSocket = (server) => {
@@ -80,6 +81,57 @@ export const initializeSocket = (server) => {
       });
     });
 
+    // ============================================
+    // NEW MESSAGE SENDING (FIXED - PROPER FORMAT)
+    // ============================================
+    
+    socket.on("sendMessage", async (messageData) => {
+      try {
+        console.log(`📨 Socket message received from ${socket.userId}:`, messageData);
+        
+        // Fetch sender's user info
+        const senderUser = await User.findById(socket.userId).select('firstName lastName username profilePicture avatar');
+        
+        // Format message to match your frontend expectations
+        const formattedMessage = {
+          threadId: messageData.threadId,
+          message: {
+            _id: messageData.messageId, // Use the ID from database
+            text: messageData.content,
+            senderId: {
+              _id: socket.userId,
+              firstName: senderUser?.firstName,
+              lastName: senderUser?.lastName,
+              username: senderUser?.username,
+              profilePicture: senderUser?.profilePicture,
+              avatar: senderUser?.avatar,
+            },
+            createdAt: messageData.timestamp || new Date(),
+            status: "sent",
+          },
+        };
+        
+        // Send the message to the receiver in real-time
+        io.to(messageData.receiverId).emit("newMessage", formattedMessage);
+        
+        console.log(`✅ Message sent to ${messageData.receiverId} via socket`);
+        
+        // Also send back to sender for confirmation (optional)
+        socket.emit("messageSent", {
+          messageId: messageData.messageId,
+          status: "sent",
+          timestamp: new Date(),
+        });
+        
+      } catch (error) {
+        console.error("❌ Error sending message via socket:", error);
+        socket.emit("messageError", {
+          error: "Failed to send message",
+          details: error.message,
+        });
+      }
+    });
+
     // Message delivery acknowledgment
     socket.on("messageDelivered", async ({ messageId }) => {
       try {
@@ -102,43 +154,53 @@ export const initializeSocket = (server) => {
     });
 
     // ============================================
-    // VOICE CALL SIGNALING (Matches Frontend)
+    // VOICE/VIDEO CALL SIGNALING (FIXED)
     // ============================================
 
-// In your backend socket file, this should be the initiateCall handler:
+    // Initiate call - User A calls User B
+    socket.on("initiateCall", async ({ recipientId, threadId, callType = "voice" }) => {
+      console.log(`📞 ${callType} call initiated by ${socket.userId} to ${recipientId}, thread: ${threadId}`);
+      
+      try {
+        // Check if recipient is connected
+        const recipientSockets = await io.in(recipientId).allSockets();
+        if (recipientSockets.size === 0) {
+          // Recipient is offline
+          socket.emit("callFailed", {
+            recipientId,
+            reason: "User is offline",
+          });
+          return;
+        }
 
-socket.on("initiateCall", async ({ recipientId, threadId }) => {
-  console.log(`📞 Call initiated by ${socket.userId} to ${recipientId}, thread: ${threadId}`);
-  
-  try {
-    // Fetch caller's user info to send with the notification
-    const callerUser = await User.findById(socket.userId).select('firstName lastName username profilePicture avatar');
-    
-    // Send incoming call notification to recipient with caller info
-    io.to(recipientId).emit("incomingCall", {
-      callerId: socket.userId,
-      threadId: threadId,
-      callerInfo: {
-        name: callerUser?.firstName || callerUser?.lastName || callerUser?.username || "Unknown User",
-        avatar: callerUser?.profilePicture || callerUser?.avatar || "👤",
-      },
-      timestamp: new Date(),
+        // Fetch caller's user info to send with the notification
+        const callerUser = await User.findById(socket.userId).select('firstName lastName username profilePicture avatar');
+        
+        // Send incoming call notification to recipient with caller info
+        io.to(recipientId).emit("incomingCall", {
+          callerId: socket.userId,
+          threadId: threadId,
+          callType: callType, // ✅ FIXED: Now includes callType
+          callerInfo: {
+            name: callerUser?.firstName || callerUser?.lastName || callerUser?.username || "Unknown User",
+            avatar: callerUser?.profilePicture || callerUser?.avatar || "👤",
+          },
+          timestamp: new Date(),
+        });
+        
+        console.log(`✅ ${callType} call notification sent with caller info:`, {
+          name: callerUser?.firstName || callerUser?.username,
+          avatar: callerUser?.profilePicture || "👤"
+        });
+      } catch (error) {
+        console.error("❌ Error initiating call:", error);
+        socket.emit("callFailed", {
+          recipientId,
+          reason: "Internal server error",
+        });
+      }
     });
-    
-    console.log(`✅ Call notification sent with caller info:`, {
-      name: callerUser?.firstName || callerUser?.username,
-      avatar: callerUser?.profilePicture || "👤"
-    });
-  } catch (error) {
-    console.error("❌ Error fetching caller info:", error);
-    // Fallback - send without caller info
-    io.to(recipientId).emit("incomingCall", {
-      callerId: socket.userId,
-      threadId: threadId,
-      timestamp: new Date(),
-    });
-  }
-});
+
     // Accept call - User B accepts the incoming call
     socket.on("acceptCall", ({ callerId, threadId }) => {
       console.log(`✅ Call accepted by ${socket.userId} from ${callerId}, thread: ${threadId}`);
@@ -187,23 +249,6 @@ socket.on("initiateCall", async ({ recipientId, threadId }) => {
       });
     });
 
-
-  socket.on("typing", ({ threadId, receiverId }) => {
-  socket.to(receiverId).emit("userTyping", {
-    threadId,
-    userId: socket.userId,
-    isTyping: true,
-  });
-});
-
-socket.on("stopTyping", ({ threadId, receiverId }) => {
-  socket.to(receiverId).emit("userTyping", {
-    threadId,
-    userId: socket.userId,
-    isTyping: false,
-  });
-});
-
     // WebRTC answer - Send WebRTC answer back to caller
     socket.on("answer", ({ callerId, answer }) => {
       console.log(`📥 WebRTC answer sent from ${socket.userId} to ${callerId}`);
@@ -241,8 +286,6 @@ export const getIO = () => {
   }
   return io;
 };
-
-
 
 export default {
   initializeSocket,
