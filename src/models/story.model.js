@@ -20,6 +20,9 @@ const storySchema = new mongoose.Schema(
       },
       thumbnail: String,
       duration: Number,
+      width: Number,
+      height: Number,
+      public_id: String, // Cloudinary public_id for deletion
     },
     reply_settings: {
       type: String,
