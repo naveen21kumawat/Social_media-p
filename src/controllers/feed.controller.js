@@ -39,8 +39,8 @@ export const getHomeFeed = asyncHandler(async (req, res) => {
   }
 
   const posts = await Post.find(query)
-    .populate("user_id", "firstName lastName username profilePicture")
-    .populate("tags", "firstName lastName username")
+    .populate("user_id", "firstName lastName username profileImage")
+    .populate("tags", "firstName lastName username , profileImage")
     .sort({ createdAt: -1 })
     .limit(parseInt(limit));
 

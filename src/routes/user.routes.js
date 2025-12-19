@@ -15,8 +15,10 @@ import {
   unlockAccount,
   resetPasswordForTesting,
   getUserProfile,
+  updateProfileImage
 } from "../controllers/user.controller.js";
 import { verifyJwt, verifyJwt as verifyRoute } from "../middleware/auth.middleware.js"; // use this to protect routes
+import { uploadSingle } from "../middleware/upload.middleware.js";
 
 const router = express.Router();
 
@@ -39,6 +41,8 @@ router.route("/logout").post(verifyRoute, logOutUser);
 router.route("/current-user").get(verifyRoute, getCurrentUser);
 router.route("/change-password").post(verifyRoute, changePassword);
 router.route("/delete/:id").delete(verifyRoute, deleteUser);
+router.route("/update-profile-picture").put(verifyJwt, uploadSingle, updateProfileImage);
+// router.route("/update-cover-photo").put(verifyRoute, updateCoverPhoto);
 router.route("/update-profile").put(verifyRoute, updateProfile);
 
 export { router as userRoutes };
