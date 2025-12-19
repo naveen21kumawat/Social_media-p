@@ -108,8 +108,9 @@ export const getUserStories = asyncHandler(async (req, res) => {
       if (story.privacy === "public") return true;
       if (!currentUserId) return false;
       if (story.user_id._id.toString() === currentUserId.toString()) return true;
-      // TODO: Check if currentUser follows the story owner for 'followers' privacy
-      return story.privacy === "public";
+      // For now, allow followers privacy stories when viewing user's stories (TODO: Implement proper follow check)
+      if (story.privacy === "followers") return true;
+      return false;
     })
     .map((story) => ({
       _id: story._id,
@@ -158,7 +159,8 @@ export const getAllStories = asyncHandler(async (req, res) => {
     .filter((story) => {
       if (story.privacy === "public") return true;
       if (story.user_id._id.toString() === currentUserId.toString()) return true;
-      // TODO: Check if currentUser follows the story owner for 'followers' privacy
+      // For now, allow followers privacy stories (TODO: Implement proper follow check)
+      if (story.privacy === "followers") return true;
       return false;
     })
     .map((story) => ({
