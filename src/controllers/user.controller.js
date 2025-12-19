@@ -12,6 +12,7 @@ import OTPService from "../services/otp.service.js";
 import EmailService from "../services/email.service.js";
 import redis from '../utils/redis.config.js';
 import bcrypt from "bcrypt";
+import { uploadOnCloudinary } from "../utils/cloudinary.js";
 // import crypto from "crypto";
 
 // Utility function to generate a 6-digit OTP as string
@@ -1094,6 +1095,48 @@ const getUserProfile = asyncHandler(async (req, res) => {
     );
 });
 
+
+const updateProfileImage = asyncHandler(async (req, res) => {
+  const userId = req.user?._id;
+  console.log("Request headers:", req.headers);
+  console.log("Request content-type:", req.get('Content-Type'));
+  console.log("req.file:", req.file);
+  console.log("req.files:", req.files);
+  console.log("Request body:", req.body);
+  if (!userId) {
+    throw new ApiError(400, "Please provide user ID first");
+  }
+  // The file will be available as req.file after uploadSingle middleware
+  // Try different ways to access the file
+const file = req.file || req.files?.file || req.files?.[0];
+  console.log("Uploaded file info:", file);
+  
+  if (!file) {
+    throw new ApiError(400, "At least one media file (image/video) is required");
+  }
+  
+  // Upload to Cloudinary
+  const cloudinaryResponse = await uploadOnCloudinary(file.path);
+  
+  if (!cloudinaryResponse) {
+    throw new ApiError(500, `Failed to upload profile image`);
+  }
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { profileImage: cloudinaryResponse.secure_url },
+    { new: true }
+  ).select("-password -refreshToken -otp");
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        user,
+        "Profile image updated successfully"
+      )
+    );  
+});
+
 export {
   registerUser,
   verifyRegisterOtp,
@@ -1110,4 +1153,6 @@ export {
   unlockAccount,
   resetPasswordForTesting,
   getUserProfile,
+  updateProfileImage
+  
 };

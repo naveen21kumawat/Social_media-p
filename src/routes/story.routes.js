@@ -17,6 +17,7 @@ router.route("/delete/:storyId").delete(verifyJwt, deleteStory);
 router.route("/feed").get(verifyJwt, getAllStories); // Get all stories (feed)
 router.route("/user/:userId").get(verifyJwt, getUserStories); // Get specific user's stories
 
+router.route("/get-all-stories").get(verifyJwt, getAllStories); // Get all stories (feed)
 // Cleanup route (can be called manually or by cron job)
 router.route("/cleanup").post(cleanupExpiredStories);
 
