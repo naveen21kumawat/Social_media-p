@@ -22,11 +22,11 @@ export const getNotifications = asyncHandler(async (req, res) => {
 
   // Build query
   const query = { recipient_id: userId };
-  
+
   if (type) {
     query.type = type;
   }
-  
+
   if (cursor) {
     query._id = { $lt: cursor };
   }
@@ -113,6 +113,26 @@ export const markAllNotificationsAsRead = asyncHandler(async (req, res) => {
         200,
         { updated: result.modifiedCount },
         "All notifications marked as read"
+      )
+    );
+});
+
+// GET /notifications/unread-count - Get unread notification count
+export const getUnreadCount = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+
+  const unreadCount = await Notification.countDocuments({
+    recipient_id: userId,
+    is_read: false,
+  });
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { unreadCount },
+        "Unread count retrieved successfully"
       )
     );
 });
@@ -220,7 +240,7 @@ export const createLikeNotification = asyncHandler(async (req, res) => {
   const likerId = req.user._id;
 
   const post = await Post.findById(postId).select("user_id media");
-  
+
   if (!post) {
     throw new ApiError(404, "Post not found");
   }
@@ -241,7 +261,7 @@ export const createCommentNotification = asyncHandler(async (req, res) => {
   const commenterId = req.user._id;
 
   const post = await Post.findById(postId).select("user_id media");
-  
+
   if (!post) {
     throw new ApiError(404, "Post not found");
   }
@@ -267,7 +287,7 @@ export const createShareNotification = asyncHandler(async (req, res) => {
   const sharerId = req.user._id;
 
   const post = await Post.findById(postId).select("user_id media");
-  
+
   if (!post) {
     throw new ApiError(404, "Post not found");
   }
@@ -288,7 +308,7 @@ export const createReelNotification = asyncHandler(async (req, res) => {
   const userId = req.user._id;
 
   const reel = await Reel.findById(reelId).select("user_id thumbnail_url");
-  
+
   if (!reel) {
     throw new ApiError(404, "Reel not found");
   }

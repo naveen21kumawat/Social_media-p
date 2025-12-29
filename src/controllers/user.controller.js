@@ -40,7 +40,7 @@ export const generateAccessAndRefreshTokens = async (userId) => {
     throw new ApiError(
       500,
       error?.message ||
-        "Something went wrong while generating refresh and access tokens"
+      "Something went wrong while generating refresh and access tokens"
     );
   }
 };
@@ -75,11 +75,11 @@ const registerUser = asyncHandler(async (req, res) => {
   const identifier = email || phone;
   const rateLimitKey = `ratelimit:registration:${identifier}`;
   const attemptCount = await redis.incr(rateLimitKey);
-  
+
   if (attemptCount === 1) {
     await redis.expire(rateLimitKey, 15 * 60); // 15 minutes
   }
-  
+
   if (attemptCount > 3) {
     throw new ApiError(429, "Too many registration attempts. Please try again later.");
   }
@@ -113,7 +113,7 @@ const registerUser = asyncHandler(async (req, res) => {
   try {
     if (email) {
       await emailService.sendOTPEmail(email, otp, "registration");
-      
+
       return res.status(200).json(
         new ApiResponse(
           200,
@@ -128,7 +128,7 @@ const registerUser = asyncHandler(async (req, res) => {
       );
     } else if (phone) {
       await smsService.sendOTP(phone, otp, "registration");
-      
+
       return res.status(200).json(
         new ApiResponse(
           200,
@@ -259,11 +259,11 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
 //   // Check rate limiting for resend
 //   const resendRateLimitKey = `ratelimit:resend:${identifier}`;
 //   const resendCount = await redis.incr(resendRateLimitKey);
-  
+
 //   if (resendCount === 1) {
 //     await redis.expire(resendRateLimitKey, 15 * 60);
 //   }
-  
+
 //   if (resendCount > 3) {
 //     throw new ApiError(429, "Too many resend attempts. Please try again later.");
 //   }
@@ -300,7 +300,7 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
 //   try {
 //     if (registrationData.email) {
 //       await emailService.sendOTPEmail(registrationData.email, otp, "registration");
-      
+
 //       return res.status(200).json(
 //         new ApiResponse(
 //           200,
@@ -313,7 +313,7 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
 //       );
 //     } else if (registrationData.phone) {
 //       await smsService.sendOTP(registrationData.phone, otp, "registration");
-      
+
 //       return res.status(200).json(
 //         new ApiResponse(
 //           200,
@@ -662,9 +662,9 @@ const getCurrentUser = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User not found");
   }
   const followersCount = await Followers.countDocuments({
-      following_id: user._id,
-      status: "accepted",
-    }),
+    following_id: user._id,
+    status: "accepted",
+  }),
     followingCount = await Followers.countDocuments({
       follower_id: user._id,
       status: "accepted",
@@ -788,9 +788,8 @@ const forgotPassword = asyncHandler(async (req, res) => {
     throw new ApiError(500, "Email service not configured");
   }
 
-  const resetUrl = `${
-    process.env.FRONTEND_URL || "http://localhost:3000"
-  }/reset-password?token=${resetToken}`;
+  const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"
+    }/reset-password?token=${resetToken}`;
 
   await EmailService.sendPasswordResetEmail(user.email, resetUrl);
   return res.status(200).json(
@@ -887,10 +886,25 @@ const deleteUser = asyncHandler(async (req, res) => {
 
 const updateProfile = asyncHandler(async (req, res) => {
   const userId = req.user._id;
-  const { firstName, lastName, bio, profile_type, coverPhoto } = req.body;
+  let { firstName, lastName, bio, profile_type, coverPhoto, isPrivate } = req.body;
 
-  // to do
-  // image will upload into s3 buket or something else then extract the url and save into db
+  // BACKWARD COMPATIBILITY: Handle frontend sending profile_type: "private"/"public"
+  // Convert to isPrivate boolean
+  if (profile_type === 'private' || profile_type === 'public') {
+    isPrivate = profile_type === 'private';
+    profile_type = undefined; // Don't update the actual profile_type field
+    console.log(`⚠️ Converting profile_type "${req.body.profile_type}" to isPrivate: ${isPrivate}`);
+  }
+
+  // Validate isPrivate if provided
+  if (isPrivate !== undefined && typeof isPrivate !== 'boolean') {
+    throw new ApiError(400, 'isPrivate must be a boolean value');
+  }
+
+  // Validate profile_type if provided (should be "personal" or "business")
+  if (profile_type && !['personal', 'business'].includes(profile_type)) {
+    throw new ApiError(400, 'profile_type must be either "personal" or "business"');
+  }
 
   const user = await User.findById(userId);
 
@@ -905,6 +919,27 @@ const updateProfile = asyncHandler(async (req, res) => {
   if (profile_type) user.profile_type = profile_type;
   if (coverPhoto) user.coverPhoto = coverPhoto;
 
+  // Handle privacy toggle
+  if (isPrivate !== undefined) {
+    const oldPrivacy = user.isPrivate;
+    user.isPrivate = isPrivate;
+
+    // Log the privacy change
+    console.log(`✅ User ${userId} changed account privacy: ${oldPrivacy ? 'private' : 'public'} → ${isPrivate ? 'private' : 'public'}`);
+
+    // If switching from private to public, auto-accept all pending follow requests
+    if (oldPrivacy === true && isPrivate === false) {
+      const pendingRequests = await Followers.updateMany(
+        { following_id: userId, status: 'requested' },
+        { $set: { status: 'accepted' } }
+      );
+
+      if (pendingRequests.modifiedCount > 0) {
+        console.log(`✅ Auto-accepted ${pendingRequests.modifiedCount} pending follow requests for user ${userId}`);
+      }
+    }
+  }
+
   await user.save();
 
   const updatedUser = await User.findById(userId).select(
@@ -913,7 +948,7 @@ const updateProfile = asyncHandler(async (req, res) => {
 
   return res
     .status(200)
-    .json(new ApiResponse(200, updatedUser, "Profile updated successfully"));
+    .json(new ApiResponse(200, { user: updatedUser }, "Profile updated successfully"));
 });
 
 // Unlock account (for development/admin use)
@@ -1108,16 +1143,16 @@ const updateProfileImage = asyncHandler(async (req, res) => {
   }
   // The file will be available as req.file after uploadSingle middleware
   // Try different ways to access the file
-const file = req.file || req.files?.file || req.files?.[0];
+  const file = req.file || req.files?.file || req.files?.[0];
   console.log("Uploaded file info:", file);
-  
+
   if (!file) {
     throw new ApiError(400, "At least one media file (image/video) is required");
   }
-  
+
   // Upload to Cloudinary
   const cloudinaryResponse = await uploadOnCloudinary(file.path);
-  
+
   if (!cloudinaryResponse) {
     throw new ApiError(500, `Failed to upload profile image`);
   }
@@ -1134,7 +1169,7 @@ const file = req.file || req.files?.file || req.files?.[0];
         user,
         "Profile image updated successfully"
       )
-    );  
+    );
 });
 
 export {
@@ -1154,5 +1189,5 @@ export {
   resetPasswordForTesting,
   getUserProfile,
   updateProfileImage
-  
+
 };

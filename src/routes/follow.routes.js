@@ -2,8 +2,11 @@ import express from "express";
 import {
   sendFollowRequest,
   acceptFollowRequest,
+  rejectFollowRequest,
   removeFollow,
   removeFollowRequest,
+  cancelFollowRequestByUserId,
+  getPendingRequests,
   getFollowStatus,
   followBack,
   getFollowSuggestions,
@@ -25,8 +28,17 @@ router.post("/request/:targetUserId", sendFollowRequest);
 // Accept pending follow request
 router.post("/accept/:requestId", acceptFollowRequest);
 
-// remove follow request if pending request exists
+// Reject pending follow request
+router.post("/reject/:requestId", rejectFollowRequest);
+
+// Get pending follow requests
+router.get("/pending-requests", getPendingRequests);
+
+// remove follow request if pending request exists (by requestId)
 router.delete("/remove-request/:requestId", removeFollowRequest);
+
+// Cancel follow request (by userId - for frontend)
+router.delete("/cancel/:userId", cancelFollowRequestByUserId);
 
 // Unfollow or remove follower
 router.delete("/a/:targetUserId", removeFollow);
