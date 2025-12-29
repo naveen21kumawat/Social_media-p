@@ -20,13 +20,13 @@ const chatMessageSchema = new mongoose.Schema(
     },
     messageType: {
       type: String,
-      enum: ["text", "image", "video", "audio", "file", "reaction"],
+      enum: ["text", "image", "video", "audio", "file", "reaction", "shared_post", "shared_reel"],
       default: "text",
     },
     // Encrypted message content
     encryptedContent: {
       type: String,
-      required: function() {
+      required: function () {
         return this.messageType === "text" || this.messageType === "reaction";
       },
     },
@@ -44,6 +44,21 @@ const chatMessageSchema = new mongoose.Schema(
         thumbnail: String, // For video
       },
     ],
+    // Shared content (posts/reels)
+    sharedContent: {
+      contentType: {
+        type: String,
+        enum: ["post", "reel"],
+      },
+      contentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        refPath: "sharedContent.contentType",
+      },
+      // Cached content data for preview (in case original is deleted)
+      contentData: {
+        type: mongoose.Schema.Types.Mixed,
+      },
+    },
     // Reply to another message
     replyTo: {
       type: mongoose.Schema.Types.ObjectId,

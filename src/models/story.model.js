@@ -38,6 +38,24 @@ const storySchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // View tracking - stores who viewed the story and when
+    views: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        viewedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    viewCount: {
+      type: Number,
+      default: 0,
+    },
     expires_at: {
       type: Date,
       required: true,
@@ -54,5 +72,6 @@ const storySchema = new mongoose.Schema(
 // Auto-expire after 24 hours
 storySchema.index({ expires_at: 1 }, { expireAfterSeconds: 0 });
 storySchema.index({ user_id: 1, createdAt: -1 });
+storySchema.index({ "views.user": 1 }); // Index for view tracking queries
 
 export const Story = mongoose.model("Story", storySchema);

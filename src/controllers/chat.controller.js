@@ -2,6 +2,8 @@ import { ChatThread } from "../models/chatThread.model.js";
 import { ChatMessage } from "../models/chatMessage.model.js";
 import { CallLog } from "../models/callLog.model.js";
 import { User } from "../models/user.model.js";
+import { Post } from "../models/post.model.js";
+import { Reel } from "../models/reel.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asynHandler.js";
@@ -69,7 +71,7 @@ export const getAllThreads = asyncHandler(async (req, res) => {
 
     if (thread.unreadCount) {
       // If it's a Map object, use .get(), otherwise access as plain object
-      unreadCount = typeof thread.unreadCount.get === 'function' 
+      unreadCount = typeof thread.unreadCount.get === 'function'
         ? (thread.unreadCount.get(userIdStr) || 0)
         : (thread.unreadCount[userIdStr] || 0);
     }
@@ -91,12 +93,12 @@ export const getAllThreads = asyncHandler(async (req, res) => {
       participant: otherParticipant,
       lastMessage: lastMessage
         ? {
-            text: lastMessageText,
-            media: lastMessage.media,
-            createdAt: lastMessage.createdAt,
-            senderId: lastMessage.senderId,
-            isDeleted: lastMessage.isDeleted,
-          }
+          text: lastMessageText,
+          media: lastMessage.media,
+          createdAt: lastMessage.createdAt,
+          senderId: lastMessage.senderId,
+          isDeleted: lastMessage.isDeleted,
+        }
         : null,
       lastMessageAt: thread.lastMessageAt,
       unreadCount,
@@ -209,7 +211,7 @@ export const createOrGetThread = asyncHandler(async (req, res) => {
         isPinned: false,
         isBlocked: false,
       };
-      
+
       io.to(userId.toString()).emit("newThread", {
         thread: senderThreadData,
         threadId: thread._id,
@@ -226,7 +228,7 @@ export const createOrGetThread = asyncHandler(async (req, res) => {
 export const sendMessage = asyncHandler(async (req, res) => {
   const userId = req.user._id;
   const { threadId } = req.params;
-  const { text, media_ids = [], reply_to } = req.body;
+  const { text, media_ids = [], reply_to, messageType, sharedContent } = req.body;
 
   // Validate thread
   const thread = await ChatThread.findOne({
@@ -250,43 +252,123 @@ export const sendMessage = asyncHandler(async (req, res) => {
   );
 
   // Validate message content
-  if (!text && (!media_ids || media_ids.length === 0)) {
-    throw new ApiError(400, "Message must contain text or media");
+  if (!text && (!media_ids || media_ids.length === 0) && !sharedContent) {
+    throw new ApiError(400, "Message must contain text, media, or shared content");
   }
 
-  // Encrypt message text
-  const encryptedContent = text ? encryptMessage(text) : null;
-
-  // Process media files
-  const files = req.files || [];
-  const media = files.map((file) => {
-    const fileType = file.mimetype.startsWith("image/")
-      ? "image"
-      : file.mimetype.startsWith("video/")
-      ? "video"
-      : file.mimetype.startsWith("audio/")
-      ? "audio"
-      : "file";
-
-    return {
-      type: fileType,
-      url: `/uploads/${file.filename}`,
-      filename: file.filename,
-      size: file.size,
-    };
-  });
-
-  // Create message
-  const message = await ChatMessage.create({
+  // Prepare message data
+  const messageData = {
     threadId,
     senderId: userId,
     receiverId,
-    messageType: text ? "text" : media.length > 0 ? media[0].type : "text",
-    encryptedContent,
-    media,
+    messageType: messageType || "text",
     replyTo: reply_to || null,
     status: "sent",
-  });
+  };
+
+  // Encrypt message text if provided
+  if (text) {
+    messageData.encryptedContent = encryptMessage(text);
+  }
+
+  // Process media files
+  const files = req.files || [];
+  if (files.length > 0) {
+    messageData.media = files.map((file) => {
+      const fileType = file.mimetype.startsWith("image/")
+        ? "image"
+        : file.mimetype.startsWith("video/")
+          ? "video"
+          : file.mimetype.startsWith("audio/")
+            ? "audio"
+            : "file";
+
+      return {
+        type: fileType,
+        url: `/uploads/${file.filename}`,
+        filename: file.filename,
+        size: file.size,
+      };
+    });
+  }
+
+  // Handle shared content (posts/reels)
+  if (messageType === "shared_post" || messageType === "shared_reel") {
+    if (!sharedContent || !sharedContent.contentId) {
+      throw new ApiError(400, "Content ID required for shared content");
+    }
+
+    console.log(`📤 Sharing ${messageType} with ID: ${sharedContent.contentId}`);
+
+    // Fetch and cache the content data
+    let contentData;
+    if (messageType === "shared_post") {
+      const post = await Post.findById(sharedContent.contentId)
+        .populate("user_id", "firstName lastName username profilePicture profileImage avatar")
+        .lean();
+
+      if (!post || post.is_deleted) {
+        throw new ApiError(404, "Post not found or has been deleted");
+      }
+
+      contentData = {
+        _id: post._id,
+        caption: post.caption,
+        media: post.media,
+        user: {
+          _id: post.user_id._id,
+          firstName: post.user_id.firstName,
+          lastName: post.user_id.lastName,
+          username: post.user_id.username,
+          profilePicture: post.user_id.profilePicture || post.user_id.profileImage || post.user_id.avatar
+        },
+        likes_count: post.likes_count || 0,
+        comments_count: post.comments_count || 0,
+        createdAt: post.createdAt
+      };
+    } else {
+      const reel = await Reel.findById(sharedContent.contentId)
+        .populate("user_id", "firstName lastName username profilePicture profileImage avatar")
+        .lean();
+
+      if (!reel || reel.is_deleted) {
+        throw new ApiError(404, "Reel not found or has been deleted");
+      }
+
+      contentData = {
+        _id: reel._id,
+        caption: reel.caption,
+        media: reel.media,
+        user: {
+          _id: reel.user_id._id,
+          firstName: reel.user_id.firstName,
+          lastName: reel.user_id.lastName,
+          username: reel.user_id.username,
+          profilePicture: reel.user_id.profilePicture || reel.user_id.profileImage || reel.user_id.avatar
+        },
+        likes_count: reel.likes_count || 0,
+        comments_count: reel.comments_count || 0,
+        createdAt: reel.createdAt
+      };
+    }
+
+    messageData.sharedContent = {
+      contentType: messageType === "shared_post" ? "post" : "reel",
+      contentId: sharedContent.contentId,
+      contentData: contentData
+    };
+
+    // Set default text if not provided
+    if (!text) {
+      const defaultText = `Shared a ${messageType === "shared_post" ? "post" : "reel"}`;
+      messageData.encryptedContent = encryptMessage(defaultText);
+    }
+
+    console.log(`✅ Cached ${messageType} data for preview`);
+  }
+
+  // Create message
+  const message = await ChatMessage.create(messageData);
 
   // Populate sender and reply info
   await message.populate(
@@ -307,15 +389,18 @@ export const sendMessage = asyncHandler(async (req, res) => {
 
   await thread.save();
 
+  // Prepare message for socket emission
+  const messageForSocket = {
+    ...message.toObject(),
+    text: text || (messageData.encryptedContent ? decryptMessage(messageData.encryptedContent) : null)
+  };
+
   // Emit socket event for real-time delivery
   const io = getIO();
   if (io) {
     io.to(receiverId.toString()).emit("newMessage", {
       threadId,
-      message: {
-        ...message.toObject(),
-        text: text, // Send decrypted text for client
-      },
+      message: messageForSocket,
     });
 
     // Send delivery status to sender
@@ -329,10 +414,7 @@ export const sendMessage = asyncHandler(async (req, res) => {
   return res.status(201).json(
     new ApiResponse(
       201,
-      {
-        ...message.toObject(),
-        text: text, // Return decrypted for sender
-      },
+      messageForSocket,
       "Message sent successfully"
     )
   );
@@ -592,10 +674,10 @@ export const uploadChatMedia = asyncHandler(async (req, res) => {
     const fileType = file.mimetype.startsWith("image/")
       ? "image"
       : file.mimetype.startsWith("video/")
-      ? "video"
-      : file.mimetype.startsWith("audio/")
-      ? "audio"
-      : "file";
+        ? "video"
+        : file.mimetype.startsWith("audio/")
+          ? "audio"
+          : "file";
 
     // Generate encrypted media URL token
     const mediaUrl = `/uploads/${file.filename}`;
@@ -734,6 +816,63 @@ export const endCall = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, callLog, "Call ended successfully"));
 });
 
+// 10. Delete thread
+export const deleteThread = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const { threadId } = req.params;
+
+  // Find the thread
+  const thread = await ChatThread.findById(threadId);
+
+  if (!thread) {
+    throw new ApiError(404, "Thread not found");
+  }
+
+  // Check if user is a participant in the thread
+  const isParticipant = thread.participants.some(
+    (participant) => participant.toString() === userId.toString()
+  );
+
+  if (!isParticipant) {
+    throw new ApiError(403, "You are not a participant in this thread");
+  }
+
+  // Soft delete - Remove user from participants
+  // This keeps the thread for other participants
+  await ChatThread.findByIdAndUpdate(threadId, {
+    $pull: { participants: userId },
+  });
+
+  // Check if any participants are left
+  const updatedThread = await ChatThread.findById(threadId);
+
+  // If no participants left, delete the thread and all messages
+  if (updatedThread && updatedThread.participants.length === 0) {
+    await ChatMessage.deleteMany({ threadId });
+    await ChatThread.findByIdAndDelete(threadId);
+  }
+
+  // Emit socket event to notify about thread deletion
+  const io = getIO();
+  if (io) {
+    io.to(userId.toString()).emit("threadDeleted", {
+      threadId,
+      deletedAt: new Date(),
+    });
+  }
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        threadId,
+        deletedAt: new Date(),
+      },
+      "Thread deleted successfully"
+    )
+  );
+});
+
 export default {
   getAllThreads,
   createOrGetThread,
@@ -745,4 +884,5 @@ export default {
   uploadChatMedia,
   requestCall,
   endCall,
+  deleteThread,
 };

@@ -9,6 +9,7 @@ import {
   deleteComment,
   sharePost,
   savePost,
+  unsavePost,
   reportPost,
   getCurrentUserPosts,
   totalPostCount,
@@ -32,6 +33,8 @@ router.route("/comment/:postId").post(verifyJwt, commentOnPost);
 router.route("/comment/:commentId").delete(verifyJwt, deleteComment);
 router.route("/share/:postId").post(verifyJwt, sharePost);
 router.route("/save/:postId").post(verifyJwt, savePost);
+router.route("/unsave/:postId").delete(verifyJwt, unsavePost);
+
 router.route("/user-saved-posts").get(verifyJwt, getUserSavedPosts);
 // router.route("/unsaved/:postId").post(verifyJwt,)
 router.route("/report/:postId").post(verifyJwt, reportPost);

@@ -163,7 +163,7 @@ export const getPostDetails = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, postData, "Post details fetched successfully"));
 });
 
-// Like a post
+// Like a post (Idempotent)
 export const likePost = asyncHandler(async (req, res) => {
   const { postId } = req.params;
   const userId = req.user._id;
@@ -182,11 +182,25 @@ export const likePost = asyncHandler(async (req, res) => {
   });
 
   if (existingLike) {
-    throw new ApiError(400, "You already liked this post");
+    // Already liked - return success (idempotent)
+    console.log(`✅ Post ${postId} already liked by user ${userId} - returning success`);
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          {
+            likes_count: post.likes_count,
+            alreadyLiked: true,
+            isLiked: true
+          },
+          "Post already liked"
+        )
+      );
   }
 
   // Create like
-  await Like.create({
+  const like = await Like.create({
     user_id: userId,
     target_type: "post",
     target_id: postId,
@@ -196,6 +210,8 @@ export const likePost = asyncHandler(async (req, res) => {
   post.likes_count += 1;
   await post.save();
 
+  console.log(`❤️ Post ${postId} liked by user ${userId}`);
+
   // TODO: Trigger notification to post owner
 
   return res
@@ -203,13 +219,17 @@ export const likePost = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(
         200,
-        { likes_count: post.likes_count },
+        {
+          likes_count: post.likes_count,
+          alreadyLiked: false,
+          isLiked: true
+        },
         "Post liked successfully"
       )
     );
 });
 
-// Unlike a post
+// Unlike a post (Idempotent)
 export const unlikePost = asyncHandler(async (req, res) => {
   const { postId } = req.params;
   const userId = req.user._id;
@@ -221,7 +241,22 @@ export const unlikePost = asyncHandler(async (req, res) => {
   });
 
   if (!like) {
-    throw new ApiError(404, "Like not found");
+    // Not liked - return success (idempotent)
+    console.log(`✅ Post ${postId} not liked by user ${userId} - returning success`);
+    const post = await Post.findById(postId);
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          {
+            likes_count: post?.likes_count || 0,
+            wasLiked: false,
+            isLiked: false
+          },
+          "Post not liked"
+        )
+      );
   }
 
   // Decrement likes count
@@ -231,9 +266,21 @@ export const unlikePost = asyncHandler(async (req, res) => {
     await post.save();
   }
 
+  console.log(`💔 Post ${postId} unliked by user ${userId}`);
+
   return res
     .status(200)
-    .json(new ApiResponse(200, null, "Post unliked successfully"));
+    .json(
+      new ApiResponse(
+        200,
+        {
+          likes_count: post?.likes_count || 0,
+          wasLiked: true,
+          isLiked: false
+        },
+        "Post unliked successfully"
+      )
+    );
 });
 
 // Add comment to a post
@@ -449,13 +496,31 @@ export const getUserSavedPosts = asyncHandler(async (req, res) => {
   );
 });
 
-export const unsavedPost = asyncHandler(async (req,res) => {
-
+export const unsavePost = asyncHandler(async (req, res) => {
   const { postId } = req.params;
   const userId = req.user._id;
 
-  
-})
+  const save = await Save.findOneAndDelete({
+    user_id: userId,
+    target_type: "post",
+    target_id: postId,
+  });
+
+  if (!save) {
+    throw new ApiError(404, "Saved post not found");
+  }
+
+  // Decrement saves count
+  const post = await Post.findById(postId);
+  if (post && post.saves_count > 0) {
+    post.saves_count -= 1;
+    await post.save();
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, null, "Post unsaved successfully"));
+});
 
 
 
