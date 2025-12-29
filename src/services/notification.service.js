@@ -72,7 +72,7 @@ export const createNotification = async ({
  */
 export const notifyPostLike = async (postId, postOwnerId, likerId, postThumbnail) => {
   const liker = await User.findById(likerId).select("firstName lastName username");
-  
+
   return createNotification({
     recipientId: postOwnerId,
     senderId: likerId,
@@ -91,7 +91,7 @@ export const notifyPostLike = async (postId, postOwnerId, likerId, postThumbnail
  */
 export const notifyPostComment = async (postId, postOwnerId, commenterId, postThumbnail, commentText) => {
   const commenter = await User.findById(commenterId).select("firstName lastName username");
-  
+
   return createNotification({
     recipientId: postOwnerId,
     senderId: commenterId,
@@ -110,7 +110,7 @@ export const notifyPostComment = async (postId, postOwnerId, commenterId, postTh
  */
 export const notifyPostShare = async (postId, postOwnerId, sharerId, postThumbnail) => {
   const sharer = await User.findById(sharerId).select("firstName lastName username");
-  
+
   return createNotification({
     recipientId: postOwnerId,
     senderId: sharerId,
@@ -129,7 +129,7 @@ export const notifyPostShare = async (postId, postOwnerId, sharerId, postThumbna
  */
 export const notifyFollow = async (followedUserId, followerId) => {
   const follower = await User.findById(followerId).select("firstName lastName username profilePicture");
-  
+
   return createNotification({
     recipientId: followedUserId,
     senderId: followerId,
@@ -148,7 +148,7 @@ export const notifyFollow = async (followedUserId, followerId) => {
  */
 export const notifyFollowRequest = async (targetUserId, requesterId) => {
   const requester = await User.findById(requesterId).select("firstName lastName username profilePicture");
-  
+
   return createNotification({
     recipientId: targetUserId,
     senderId: requesterId,
@@ -167,7 +167,7 @@ export const notifyFollowRequest = async (targetUserId, requesterId) => {
  */
 export const notifyReelLike = async (reelId, reelOwnerId, likerId, reelThumbnail) => {
   const liker = await User.findById(likerId).select("firstName lastName username");
-  
+
   return createNotification({
     recipientId: reelOwnerId,
     senderId: likerId,
@@ -186,7 +186,7 @@ export const notifyReelLike = async (reelId, reelOwnerId, likerId, reelThumbnail
  */
 export const notifyReelComment = async (reelId, reelOwnerId, commenterId, reelThumbnail, commentText) => {
   const commenter = await User.findById(commenterId).select("firstName lastName username");
-  
+
   return createNotification({
     recipientId: reelOwnerId,
     senderId: commenterId,
@@ -197,5 +197,43 @@ export const notifyReelComment = async (reelId, reelOwnerId, commenterId, reelTh
     message: `${commenter.firstName} ${commenter.lastName} commented on your reel: ${commentText.substring(0, 50)}`,
     thumbnail: reelThumbnail,
     actionUrl: `/reel/${reelId}`,
+  });
+};
+
+/**
+ * Create notification for follow request accepted
+ */
+export const notifyFollowRequestAccepted = async (requesterId, accepterId) => {
+  const accepter = await User.findById(accepterId).select("firstName lastName username profilePicture");
+
+  return createNotification({
+    recipientId: requesterId,
+    senderId: accepterId,
+    type: "follow_accepted",
+    referenceId: accepterId,
+    referenceType: "User",
+    title: "Follow Request Accepted",
+    message: `${accepter.firstName} ${accepter.lastName} accepted your follow request`,
+    thumbnail: accepter.profilePicture,
+    actionUrl: `/profile/${accepter.username}`,
+  });
+};
+
+/**
+ * Create notification for mention in comment
+ */
+export const notifyMention = async (mentionedUserId, mentionerId, postId, postThumbnail, commentText) => {
+  const mentioner = await User.findById(mentionerId).select("firstName lastName username");
+
+  return createNotification({
+    recipientId: mentionedUserId,
+    senderId: mentionerId,
+    type: "mention",
+    referenceId: postId,
+    referenceType: "Post",
+    title: "Mentioned You",
+    message: `${mentioner.firstName} ${mentioner.lastName} mentioned you in a comment: ${commentText.substring(0, 50)}`,
+    thumbnail: postThumbnail,
+    actionUrl: `/post/${postId}`,
   });
 };

@@ -3,6 +3,7 @@ import {
   getNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead,
+  getUnreadCount,
   updateNotificationSettings,
   getNotificationSettings,
   registerDeviceToken,
@@ -24,6 +25,7 @@ router.use(verifyJwt);
 router.route("/list").get(getNotifications);
 router.route("/read/:notificationId").put(markNotificationAsRead);
 router.route("/read-all").put(markAllNotificationsAsRead);
+router.route("/unread-count").get(getUnreadCount);
 router.route("/settings").get(getNotificationSettings);
 router.route("/settings/update").put(updateNotificationSettings);
 router.route("/register-token").post(registerDeviceToken);

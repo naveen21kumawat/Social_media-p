@@ -10,6 +10,7 @@ import {
   uploadChatMedia,
   requestCall,
   endCall,
+  deleteThread,
 } from "../controllers/chat.controller.js";
 import { verifyJwt } from "../middleware/auth.middleware.js";
 import { uploadMultiple, handleUploadError } from "../middleware/upload.middleware.js";
@@ -24,6 +25,7 @@ router.route("/threads").get(getAllThreads);
 
 // Thread routes
 router.route("/thread/:receiverId").post(createOrGetThread);
+router.route("/thread/delete/:threadId").delete(deleteThread);
 
 // Message routes
 router.route("/message/send/:threadId").post(uploadMultiple, handleUploadError, sendMessage);

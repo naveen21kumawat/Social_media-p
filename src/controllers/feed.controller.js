@@ -2,6 +2,9 @@ import { Post } from "../models/post.model.js";
 import { Reel } from "../models/reel.model.js";
 import { Story } from "../models/story.model.js";
 import { Followers } from "../models/followers.model.js";
+import { Like } from "../models/like.model.js";
+import { Comment } from "../models/comment.model.js";
+import { User } from "../models/user.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asynHandler.js";
@@ -9,52 +12,54 @@ import asyncHandler from "../utils/asynHandler.js";
 // Get home feed
 export const getHomeFeed = asyncHandler(async (req, res) => {
   const userId = req.user._id;
-  const { cursor, limit = 20, filter } = req.query;
+  const { limit = 10 } = req.query;
 
-  // Get list of users the current user follows
+  // STEP 1: Get following list
   const following = await Followers.find({
     follower_id: userId,
-    status: "accepted",
-  }).select("following_id");
+    status: 'accepted'
+  }).select('following_id');
 
-  const followingIds = following.map((f) => f.following_id);
-  followingIds.push(userId); // Include own posts
+  const followingIds = following.map(f => f.following_id);
 
-  const query = {
-    user_id: { $in: followingIds },
-    is_deleted: false,
-    visibility: { $in: ["public", "followers"] },
-  };
+  // STEP 2: Include your own posts
+  const userIdsToShow = [...followingIds, userId];
 
-  // Add cursor-based pagination
-  if (cursor) {
-    query._id = { $lt: cursor };
-  }
+  console.log(`User ${userId} follows ${followingIds.length} users`);
 
-  // Apply filters if provided
-  if (filter === "photos") {
-    query["media.type"] = "image";
-  } else if (filter === "videos") {
-    query["media.type"] = "video";
-  }
-
-  const posts = await Post.find(query)
-    .populate("user_id", "firstName lastName username profileImage")
-    .populate("tags", "firstName lastName username , profileImage")
+  // STEP 3: Get posts ONLY from followed users
+  const posts = await Post.find({
+    user_id: { $in: userIdsToShow },
+    is_deleted: false
+  })
+    .populate('user_id', 'firstName lastName username profilePicture')
     .sort({ createdAt: -1 })
-    .limit(parseInt(limit));
+    .limit(parseInt(limit))
+    .lean();
 
-  const nextCursor = posts.length > 0 ? posts[posts.length - 1]._id : null;
+  // STEP 4: Add like/comment counts
+  const postsWithData = await Promise.all(
+    posts.map(async (post) => {
+      const [isLiked, likesCount, commentsCount] = await Promise.all([
+        Like.exists({ post_id: post._id, user_id: userId }),
+        Like.countDocuments({ post_id: post._id }),
+        Comment.countDocuments({ post_id: post._id })
+      ]);
+
+      return {
+        ...post,
+        isLiked: !!isLiked,
+        likes_count: likesCount,
+        comments_count: commentsCount
+      };
+    })
+  );
 
   return res.status(200).json(
     new ApiResponse(
       200,
-      {
-        posts,
-        nextCursor,
-        hasMore: posts.length === parseInt(limit),
-      },
-      "Home feed fetched successfully"
+      { posts: postsWithData },
+      'Home feed fetched successfully'
     )
   );
 });
@@ -62,43 +67,52 @@ export const getHomeFeed = asyncHandler(async (req, res) => {
 // Get reels feed
 export const getReelsFeed = asyncHandler(async (req, res) => {
   const userId = req.user._id;
-  const { cursor, limit = 15 } = req.query;
+  const { limit = 10 } = req.query;
 
-  // Get list of users the current user follows
+  // STEP 1: Get following list
   const following = await Followers.find({
     follower_id: userId,
-    status: "accepted",
-  }).select("following_id");
+    status: 'accepted'
+  }).select('following_id');
 
-  const followingIds = following.map((f) => f.following_id);
-  followingIds.push(userId);
+  const followingIds = following.map(f => f.following_id);
+  const userIdsToShow = [...followingIds, userId];
 
-  const query = {
-    user_id: { $in: followingIds },
-    is_deleted: false,
-  };
+  console.log(`User ${userId} follows ${followingIds.length} users for reels`);
 
-  if (cursor) {
-    query._id = { $lt: cursor };
-  }
-
-  const reels = await Reel.find(query)
-    .populate("user_id", "firstName lastName username profilePicture")
-    .populate("tags", "firstName lastName username")
+  // STEP 2: Get reels ONLY from followed users
+  const reels = await Reel.find({
+    user_id: { $in: userIdsToShow },
+    is_deleted: false
+  })
+    .populate('user_id', 'firstName lastName username profilePicture')
     .sort({ createdAt: -1 })
-    .limit(parseInt(limit));
+    .limit(parseInt(limit))
+    .lean();
 
-  const nextCursor = reels.length > 0 ? reels[reels.length - 1]._id : null;
+  // STEP 3: Add like/comment counts
+  const reelsWithData = await Promise.all(
+    reels.map(async (reel) => {
+      const [isLiked, likesCount, commentsCount] = await Promise.all([
+        Like.exists({ target_type: 'reel', target_id: reel._id, user_id: userId }),
+        Like.countDocuments({ target_type: 'reel', target_id: reel._id }),
+        Comment.countDocuments({ target_type: 'reel', target_id: reel._id })
+      ]);
+
+      return {
+        ...reel,
+        isLiked: !!isLiked,
+        likes_count: likesCount,
+        comments_count: commentsCount
+      };
+    })
+  );
 
   return res.status(200).json(
     new ApiResponse(
       200,
-      {
-        reels,
-        nextCursor,
-        hasMore: reels.length === parseInt(limit),
-      },
-      "Reels feed fetched successfully"
+      { reels: reelsWithData },
+      'Reels feed fetched successfully'
     )
   );
 });
@@ -176,39 +190,85 @@ export const getUserPosts = asyncHandler(async (req, res) => {
   const currentUserId = req.user?._id;
   const { cursor, limit = 20 } = req.query;
 
+  // Get target user to check privacy settings
+  const targetUser = await User.findById(userId);
+  if (!targetUser) {
+    throw new ApiError(404, "User not found");
+  }
+
+  // Check if account is private and user is not following
+  const isOwnProfile = currentUserId && currentUserId.toString() === userId;
+
+  if (targetUser.isPrivate && !isOwnProfile) {
+    // Check if current user is following
+    const isFollowing = await Followers.findOne({
+      follower_id: currentUserId,
+      following_id: userId,
+      status: 'accepted'
+    });
+
+    if (!isFollowing) {
+      // Private account and not following - return empty
+      console.log(`🔒 Private account ${userId} - user ${currentUserId} not following`);
+      return res.status(200).json(
+        new ApiResponse(
+          200,
+          {
+            posts: [],
+            nextCursor: null,
+            hasMore: false,
+            isPrivate: true,
+            message: 'This account is private'
+          },
+          "This account is private"
+        )
+      );
+    }
+  }
+
+  // User is allowed to see posts
   const query = {
     user_id: userId,
     is_deleted: false,
   };
-
-  // If not the owner, only show public or followers posts
-  if (!currentUserId || userId !== currentUserId.toString()) {
-    query.visibility = "public";
-    // TODO: Add check if currentUser follows userId, then show 'followers' posts too
-  }
 
   if (cursor) {
     query._id = { $lt: cursor };
   }
 
   const posts = await Post.find(query)
-    .populate("user_id", "firstName lastName username profilePicture")
+    .populate("user_id", "firstName lastName username profilePicture profileImage avatar isPrivate")
     .populate("tags", "firstName lastName username")
     .sort({ createdAt: -1 })
-    .limit(parseInt(limit));
+    .limit(parseInt(limit))
+    .lean();
 
-  const nextCursor = posts.length > 0 ? posts[posts.length - 1]._id : null;
+  // Add isLiked status for each post
+  const postsWithLikeStatus = await Promise.all(
+    posts.map(async (post) => {
+      const isLiked = currentUserId
+        ? await Like.exists({ target_type: 'post', target_id: post._id, user_id: currentUserId })
+        : null;
+
+      return {
+        ...post,
+        isLiked: !!isLiked
+      };
+    })
+  );
+
+  const nextCursor = postsWithLikeStatus.length > 0 ? postsWithLikeStatus[postsWithLikeStatus.length - 1]._id : null;
 
   return res.status(200).json(
     new ApiResponse(
       200,
       {
-        posts,
+        posts: postsWithLikeStatus,
         nextCursor,
-        hasMore: posts.length === parseInt(limit),
+        hasMore: postsWithLikeStatus.length === parseInt(limit),
+        isPrivate: false
       },
       "User posts fetched successfully"
     )
   );
 });
-
