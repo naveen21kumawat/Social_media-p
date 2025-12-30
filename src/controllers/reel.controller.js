@@ -5,6 +5,7 @@ import { User } from "../models/user.model.js";
 import { Followers } from "../models/followers.model.js";
 import { Save } from "../models/save.model.js";
 import { Report } from "../models/report.model.js";
+import { Notification } from "../models/notification.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asynHandler.js";
@@ -288,6 +289,32 @@ export const toggleLikeReel = asyncHandler(async (req, res) => {
     reel.likes_count += 1;
     isLiked = true;
     message = "Reel liked successfully";
+
+    // Create notification for reel owner (only if liker is not the reel owner)
+    if (reel.user_id.toString() !== userId.toString()) {
+      try {
+        // Get the liker's details for the notification message
+        const liker = await User.findById(userId).select('firstName lastName profilePicture');
+
+        await Notification.create({
+          recipient_id: reel.user_id,
+          sender_id: userId,
+          type: "reel_like",
+          reference_id: reelId,
+          reference_type: "Reel",
+          title: "New Like",
+          message: `${liker.firstName} ${liker.lastName} liked your reel`,
+          thumbnail: reel.media?.url || null,
+          is_read: false,
+          action_url: `/reel/${reelId}`
+        });
+
+        console.log(`🔔 Notification created for reel owner ${reel.user_id}`);
+      } catch (notifError) {
+        // Don't fail the like operation if notification creation fails
+        console.error('Failed to create notification:', notifError);
+      }
+    }
   }
 
   await reel.save();
@@ -340,6 +367,32 @@ export const commentOnReel = asyncHandler(async (req, res) => {
   // Update reel comments count
   reel.comments_count += 1;
   await reel.save();
+
+  // Create notification for reel owner (only if commenter is not the reel owner)
+  if (reel.user_id.toString() !== userId.toString()) {
+    try {
+      // Get the commenter's details for the notification message
+      const commenter = await User.findById(userId).select('firstName lastName profilePicture');
+
+      await Notification.create({
+        recipient_id: reel.user_id,
+        sender_id: userId,
+        type: "reel_comment",
+        reference_id: reelId,
+        reference_type: "Reel",
+        title: "New Comment",
+        message: `${commenter.firstName} ${commenter.lastName} commented on your reel`,
+        thumbnail: reel.media?.url || null,
+        is_read: false,
+        action_url: `/reel/${reelId}`
+      });
+
+      console.log(`🔔 Notification created for reel owner ${reel.user_id}`);
+    } catch (notifError) {
+      // Don't fail the comment operation if notification creation fails
+      console.error('Failed to create notification:', notifError);
+    }
+  }
 
   return res.status(201).json(
     new ApiResponse(
