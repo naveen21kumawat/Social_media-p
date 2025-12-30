@@ -32,7 +32,7 @@ export const getHomeFeed = asyncHandler(async (req, res) => {
     user_id: { $in: userIdsToShow },
     is_deleted: false
   })
-    .populate('user_id', 'firstName lastName username profilePicture')
+    .populate('user_id', 'firstName lastName username profileImage profilePicture avatar') // ✅ FIXED
     .sort({ createdAt: -1 })
     .limit(parseInt(limit))
     .lean();
@@ -87,7 +87,7 @@ export const getReelsFeed = asyncHandler(async (req, res) => {
     user_id: { $in: userIdsToShow },
     is_deleted: false
   })
-    .populate('user_id', 'firstName lastName username profilePicture')
+    .populate('user_id', 'firstName lastName username profileImage profilePicture avatar') // ✅ FIXED
     .sort({ createdAt: -1 })
     .limit(parseInt(limit))
     .lean();
