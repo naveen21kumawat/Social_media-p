@@ -13,7 +13,8 @@ import {
   reportPost,
   getCurrentUserPosts,
   totalPostCount,
-  getUserSavedPosts
+  getUserSavedPosts,
+  getAllComments
 } from "../controllers/post.controller.js";
 import { verifyJwt } from "../middleware/auth.middleware.js";
 import { uploadMultiple, handleUploadError } from "../middleware/upload.middleware.js";
@@ -39,10 +40,13 @@ router.route("/user-saved-posts").get(verifyJwt, getUserSavedPosts);
 // router.route("/unsaved/:postId").post(verifyJwt,)
 router.route("/report/:postId").post(verifyJwt, reportPost);
 
-router.route("/save/user-saved-posts").get(verifyJwt, getCurrentUserPosts);
+router.route("/save/user-saved-posts").get(verifyJwt, getUserSavedPosts);
 
 
 router.route("/totalPostCount").get(verifyJwt, totalPostCount);
+
+router.route("/comments/:postId").get(verifyJwt, getAllComments);
+
 
 
 export default router;

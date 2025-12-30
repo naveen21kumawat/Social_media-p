@@ -37,20 +37,22 @@ export const getHomeFeed = asyncHandler(async (req, res) => {
     .limit(parseInt(limit))
     .lean();
 
-  // STEP 4: Add like/comment counts
+  // STEP 4: Add isLiked status for current user
   const postsWithData = await Promise.all(
     posts.map(async (post) => {
-      const [isLiked, likesCount, commentsCount] = await Promise.all([
-        Like.exists({ post_id: post._id, user_id: userId }),
-        Like.countDocuments({ post_id: post._id }),
-        Comment.countDocuments({ post_id: post._id })
-      ]);
+      const isLiked = await Like.exists({
+        target_id: post._id,
+        target_type: 'post',
+        user_id: userId
+      });
 
       return {
         ...post,
         isLiked: !!isLiked,
-        likes_count: likesCount,
-        comments_count: commentsCount
+        // These counts are already in the post object from the model
+        likes_count: post.likes_count,
+        comments_count: post.comments_count,
+        shares_count: post.shares_count
       };
     })
   );

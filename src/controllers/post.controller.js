@@ -3,6 +3,8 @@ import { Like } from "../models/like.model.js";
 import { Comment } from "../models/comment.model.js";
 import { Save } from "../models/save.model.js";
 import { Report } from "../models/report.model.js";
+import { Notification } from "../models/notification.model.js";
+import { User } from "../models/user.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asynHandler.js";
@@ -212,7 +214,31 @@ export const likePost = asyncHandler(async (req, res) => {
 
   console.log(`❤️ Post ${postId} liked by user ${userId}`);
 
-  // TODO: Trigger notification to post owner
+  // Create notification for post owner (only if liker is not the post owner)
+  if (post.user_id.toString() !== userId.toString()) {
+    try {
+      // Get the liker's details for the notification message
+      const liker = await User.findById(userId).select('firstName lastName profilePicture');
+
+      await Notification.create({
+        recipient_id: post.user_id,
+        sender_id: userId,
+        type: "like",
+        reference_id: postId,
+        reference_type: "Post",
+        title: "New Like",
+        message: `${liker.firstName} ${liker.lastName} liked your post`,
+        thumbnail: post.media?.[0]?.url || null,
+        is_read: false,
+        action_url: `/post/${postId}`
+      });
+
+      console.log(`🔔 Notification created for post owner ${post.user_id}`);
+    } catch (notifError) {
+      // Don't fail the like operation if notification creation fails
+      console.error('Failed to create notification:', notifError);
+    }
+  }
 
   return res
     .status(200)
@@ -325,6 +351,32 @@ export const commentOnPost = asyncHandler(async (req, res) => {
     await Comment.findByIdAndUpdate(reply_to_comment_id, {
       $inc: { replies_count: 1 },
     });
+  }
+
+  // Create notification for post owner (only if commenter is not the post owner)
+  if (post.user_id.toString() !== userId.toString()) {
+    try {
+      // Get the commenter's details for the notification message
+      const commenter = await User.findById(userId).select('firstName lastName profilePicture');
+
+      await Notification.create({
+        recipient_id: post.user_id,
+        sender_id: userId,
+        type: "comment",
+        reference_id: postId,
+        reference_type: "Post",
+        title: "New Comment",
+        message: `${commenter.firstName} ${commenter.lastName} commented on your post`,
+        thumbnail: post.media?.[0]?.url || null,
+        is_read: false,
+        action_url: `/post/${postId}`
+      });
+
+      console.log(`🔔 Notification created for post owner ${post.user_id}`);
+    } catch (notifError) {
+      // Don't fail the comment operation if notification creation fails
+      console.error('Failed to create notification:', notifError);
+    }
   }
 
   const populatedComment = await Comment.findById(comment._id).populate(
@@ -448,49 +500,68 @@ export const savePost = asyncHandler(async (req, res) => {
 
 export const getUserSavedPosts = asyncHandler(async (req, res) => {
   const userId = req.user._id;
-  const { page = 1, limit = 20 } = req.query;
+  const { page = 1, limit = 100 } = req.query;
 
   const skip = (page - 1) * limit;
 
-  // Find all saved posts for the user
+  // Find all saved post IDs for the user
   const savedPosts = await Save.find({
     user_id: userId,
     target_type: "post",
   })
-    .populate({
-      path: "target_id",
-      populate: {
-        path: "user_id",
-        select: "firstName lastName username profilePicture",
-      },
-    })
-    .sort({ createdAt: -1 })
+    .sort({ created_at: -1 })
     .skip(skip)
-    .limit(parseInt(limit));
+    .limit(parseInt(limit))
+    .lean();
 
-  // Filter out deleted posts and map to post objects
-  const posts = savedPosts
-    .filter((save) => save.target_id && !save.target_id.is_deleted)
-    .map((save) => save.target_id);
+  // Extract post IDs
+  const postIds = savedPosts.map(save => save.target_id);
 
-  const totalSavedPosts = await Save.countDocuments({
-    user_id: userId,
-    target_type: "post",
-  });
+  if (postIds.length === 0) {
+    return res.status(200).json(
+      new ApiResponse(200, [], "Saved posts fetched successfully")
+    );
+  }
+
+  // Fetch the actual posts with user details
+  const posts = await Post.find({
+    _id: { $in: postIds },
+    is_deleted: false
+  })
+    .populate("user_id", "firstName lastName username profilePicture profileImage")
+    .lean();
+
+  // Add isLiked status for each post
+  const postsWithStatus = await Promise.all(
+    posts.map(async (post) => {
+      const isLiked = await Like.exists({
+        target_id: post._id,
+        target_type: "post",
+        user_id: userId
+      });
+
+      return {
+        ...post,
+        _id: post._id,
+        id: post._id,
+        user_id: post.user_id,
+        caption: post.caption || "",
+        media: post.media || [],
+        file_url: post.file_url || post.media?.[0]?.url || "",
+        likes_count: post.likes_count || 0,
+        comments_count: post.comments_count || 0,
+        shares_count: post.shares_count || 0,
+        isLiked: !!isLiked,
+        isSaved: true,
+        createdAt: post.createdAt
+      };
+    })
+  );
 
   return res.status(200).json(
     new ApiResponse(
       200,
-      {
-        savedPosts: posts,
-        posts: posts, // For compatibility
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(totalSavedPosts / limit),
-          totalItems: totalSavedPosts,
-          itemsPerPage: parseInt(limit),
-        },
-      },
+      postsWithStatus,
       "Saved posts fetched successfully"
     )
   );
@@ -596,4 +667,63 @@ export const totalPostCount = asyncHandler(async (req, res) => {
         "Total post count fetched successfully"
       )
     );
+});
+
+
+// Get all comments for a post with pagination
+export const getAllComments = asyncHandler(async (req, res) => {
+  const { postId } = req.params;
+  const { limit = 20, page = 1 } = req.query;
+
+  if (!postId) {
+    throw new ApiError(400, "Post id is required");
+  }
+
+  // Verify post exists
+  const post = await Post.findOne({ _id: postId, is_deleted: false });
+  if (!post) {
+    throw new ApiError(404, "Post not found");
+  }
+
+  // Convert to numbers and validate
+  const limitNum = parseInt(limit);
+  const pageNum = parseInt(page);
+  const skip = (pageNum - 1) * limitNum;
+
+  // Fetch comments with pagination
+  const comments = await Comment.find({
+    target_id: postId,
+    target_type: "post",
+    is_deleted: false,
+  })
+    .populate("user_id", "firstName lastName profilePicture")
+    .sort({ createdAt: -1 }) // Newest first
+    .skip(skip)
+    .limit(limitNum);
+
+  // Get total count for pagination
+  const totalComments = await Comment.countDocuments({
+    target_id: postId,
+    target_type: "post",
+    is_deleted: false,
+  });
+
+  const totalPages = Math.ceil(totalComments / limitNum);
+  const hasMore = pageNum < totalPages;
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        comments,
+        pagination: {
+          currentPage: pageNum,
+          totalPages,
+          totalComments,
+          hasMore,
+        },
+      },
+      "Comments fetched successfully"
+    )
+  );
 });
