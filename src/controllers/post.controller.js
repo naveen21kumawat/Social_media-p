@@ -674,56 +674,40 @@ export const totalPostCount = asyncHandler(async (req, res) => {
 export const getAllComments = asyncHandler(async (req, res) => {
   const { postId } = req.params;
   const { limit = 20, page = 1 } = req.query;
+  const userId = req.user._id;
 
-  if (!postId) {
-    throw new ApiError(400, "Post id is required");
-  }
-
-  // Verify post exists
-  const post = await Post.findOne({ _id: postId, is_deleted: false });
-  if (!post) {
-    throw new ApiError(404, "Post not found");
-  }
-
-  // Convert to numbers and validate
-  const limitNum = parseInt(limit);
-  const pageNum = parseInt(page);
-  const skip = (pageNum - 1) * limitNum;
-
-  // Fetch comments with pagination
   const comments = await Comment.find({
     target_id: postId,
-    target_type: "post",
+    target_type: 'post',
     is_deleted: false,
+    reply_to_comment_id: null // Only get top-level comments
   })
-    .populate("user_id", "firstName lastName profilePicture")
-    .sort({ createdAt: -1 }) // Newest first
-    .skip(skip)
-    .limit(limitNum);
+    .populate('user_id', 'firstName lastName username profileImage profilePicture avatar') // ✅ ADD profileImage
+    .sort({ createdAt: -1 })
+    .limit(parseInt(limit))
+    .skip((parseInt(page) - 1) * parseInt(limit));
 
-  // Get total count for pagination
-  const totalComments = await Comment.countDocuments({
-    target_id: postId,
-    target_type: "post",
-    is_deleted: false,
-  });
+  // Add isLiked status for each comment
+  const commentsWithLikeStatus = await Promise.all(
+    comments.map(async (comment) => {
+      const isLiked = await Like.exists({
+        target_type: 'comment',
+        target_id: comment._id,
+        user_id: userId
+      });
 
-  const totalPages = Math.ceil(totalComments / limitNum);
-  const hasMore = pageNum < totalPages;
+      return {
+        ...comment.toObject(),
+        isLiked: !!isLiked
+      };
+    })
+  );
 
   return res.status(200).json(
     new ApiResponse(
       200,
-      {
-        comments,
-        pagination: {
-          currentPage: pageNum,
-          totalPages,
-          totalComments,
-          hasMore,
-        },
-      },
-      "Comments fetched successfully"
+      { comments: commentsWithLikeStatus },
+      'Comments fetched successfully'
     )
   );
 });
