@@ -71,13 +71,13 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(409, "User with this email or phone already exists");
   }
 
-  // Check rate limiting - prevent spam (max 3 attempts per 15 minutes)
+  // Check rate limiting - prevent spam (max 3 attempts per 2 minutes)
   const identifier = email || phone;
   const rateLimitKey = `ratelimit:registration:${identifier}`;
   const attemptCount = await redis.incr(rateLimitKey);
 
   if (attemptCount === 1) {
-    await redis.expire(rateLimitKey, 15 * 60); // 15 minutes
+    await redis.expire(rateLimitKey, 2 * 60); // 2 minutes
   }
 
   if (attemptCount > 3) {
@@ -157,7 +157,7 @@ const verifyRegisterOtp = asyncHandler(async (req, res) => {
   const { identifier, otp } = req.body; // identifier = email or phone
 
   if (!identifier?.trim()) {
-    throw new ApiError(400, "Email or phone is required");
+    throw new ApiError(400, "identifier is required");
   }
 
   if (!otp?.trim()) {

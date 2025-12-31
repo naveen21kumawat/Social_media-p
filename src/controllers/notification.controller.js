@@ -16,6 +16,7 @@ import {
 import { registerFCMToken, unregisterFCMToken } from "../services/firebase.service.js";
 
 // GET /notifications/list - Get user's notifications with pagination
+// GET /notifications/list - Get user's notifications with pagination
 export const getNotifications = asyncHandler(async (req, res) => {
   const userId = req.user._id;
   const { cursor, limit = 20, type } = req.query;
@@ -33,7 +34,7 @@ export const getNotifications = asyncHandler(async (req, res) => {
 
   // Get notifications
   const notifications = await Notification.find(query)
-    .populate("sender_id", "firstName lastName username profilePicture")
+    .populate("sender_id", "firstName lastName username profileImage profilePicture avatar") // ✅ FIXED
     .sort({ createdAt: -1 })
     .limit(parseInt(limit));
 
