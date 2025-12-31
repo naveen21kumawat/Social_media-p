@@ -32,27 +32,33 @@ export const getHomeFeed = asyncHandler(async (req, res) => {
     user_id: { $in: userIdsToShow },
     is_deleted: false
   })
-    .populate('user_id', 'firstName lastName username profileImage profilePicture avatar') // ✅ FIXED
+    .populate('user_id', 'firstName lastName username profileImage profilePicture avatar')
     .sort({ createdAt: -1 })
     .limit(parseInt(limit))
     .lean();
 
-  // STEP 4: Add isLiked status for current user
+  // STEP 4: Add isLiked status and calculate actual counts
   const postsWithData = await Promise.all(
     posts.map(async (post) => {
-      const isLiked = await Like.exists({
-        target_id: post._id,
-        target_type: 'post',
-        user_id: userId
-      });
+      const [isLiked, commentsCount] = await Promise.all([
+        Like.exists({
+          target_id: post._id,
+          target_type: 'post',
+          user_id: userId
+        }),
+        Comment.countDocuments({
+          target_id: post._id,
+          target_type: 'post',
+          is_deleted: false
+        })
+      ]);
 
       return {
         ...post,
         isLiked: !!isLiked,
-        // These counts are already in the post object from the model
-        likes_count: post.likes_count,
-        comments_count: post.comments_count,
-        shares_count: post.shares_count
+        likes_count: post.likes_count || 0,
+        comments_count: commentsCount, // ✅ Always accurate
+        shares_count: post.shares_count || 0
       };
     })
   );

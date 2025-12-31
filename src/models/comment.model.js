@@ -27,6 +27,11 @@ const commentSchema = new mongoose.Schema(
       ref: "Comment",
       default: null,
     },
+    reply_to_user_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     media: {
       type: String, // URL to attached media
     },
@@ -41,6 +46,14 @@ const commentSchema = new mongoose.Schema(
     is_deleted: {
       type: Boolean,
       default: false,
+    },
+    is_edited: {
+      type: Boolean,
+      default: false,
+    },
+    edited_at: {
+      type: Date,
+      default: null,
     },
   },
   { timestamps: true }
