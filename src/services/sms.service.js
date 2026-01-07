@@ -23,15 +23,10 @@ class SMSService {
         to: phoneNumber
       });
       
-      console.log(`SMS sent successfully. SID: ${message.sid}`);
       return message;
       */
 
       // For development/testing - just log the OTP
-      console.log(`[SMS Service] Sending OTP to ${phoneNumber}`);
-      console.log(`[SMS Service] OTP: ${otp}`);
-      console.log(`[SMS Service] Type: ${type}`);
-      console.log(`Message: Your ${type} OTP is: ${otp}. Valid for 2 minutes. Do not share this code.`);
 
       // Simulate successful SMS send
       return {

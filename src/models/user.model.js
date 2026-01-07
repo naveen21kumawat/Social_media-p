@@ -18,7 +18,7 @@ const userSchema = new Schema(
     avatar: { type: String, default: null },
     profileImage: { type: String, default: null }, // Alias for avatar
     coverPhoto: { type: String, default: null },
-    
+
     // Additional personal details
     gender: {
       type: String,
@@ -31,7 +31,7 @@ const userSchema = new Schema(
     role: { type: Schema.Types.ObjectId, ref: "Role" },
     userType: {
       type: String,
-      default:"user",
+      default: "user",
       enum: [
         "user",
         "admin",
@@ -39,12 +39,12 @@ const userSchema = new Schema(
       // required: true,
     },
 
-    bio:{ type: String, default:null },
+    bio: { type: String, default: null },
 
-    profile_type:{
+    profile_type: {
       type: String,
-      enum: ["personal","business"],
-      default:"personal"
+      enum: ["personal", "business"],
+      default: "personal"
     },
 
     // Privacy settings
@@ -73,7 +73,7 @@ const userSchema = new Schema(
     lastActive: { type: Date },
     loginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date },
-    
+
     // Username
     username: { type: String, unique: true, sparse: true },
 
@@ -86,6 +86,12 @@ const userSchema = new Schema(
 
     // Refresh token
     refreshToken: { type: String, select: false },
+
+    // Blocked users - array of user IDs that this user has blocked
+    blockedUsers: [{
+      type: Schema.Types.ObjectId,
+      ref: "User"
+    }],
   },
 
   { timestamps: true }
@@ -111,7 +117,7 @@ userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) {
     return next();
   }
-  
+
   // Only hash if password doesn't look like it's already hashed
   // Bcrypt hashes always start with $2a$, $2b$, or $2y$
   if (this.password && !this.password.startsWith("$2")) {

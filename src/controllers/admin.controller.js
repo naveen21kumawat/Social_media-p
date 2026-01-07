@@ -7,7 +7,7 @@ import { AdminLog } from "../models/adminLog.model.js";
 import { Notification } from "../models/notification.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 import jwt from "jsonwebtoken";
 import { sendPushNotification } from "../services/firebase.service.js";
 import { getIO } from "../socket/socket.js";

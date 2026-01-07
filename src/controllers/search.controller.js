@@ -4,7 +4,7 @@ import { Hashtag } from "../models/hashtag.model.js";
 import { SearchHistory } from "../models/searchHistory.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 
 // Helper: Save search history
 const saveSearchHistory = async (userId, query, searchType, resultsCount) => {
@@ -161,11 +161,9 @@ export const searchUsers = asyncHandler(async (req, res) => {
 
   // Debug: Check total users in DB
   const totalActiveUsers = await User.countDocuments({ status: "active" });
-  console.log("Total active users in DB:", totalActiveUsers);
 
   // Debug: Find any user with firstName containing the search term
-  const testUsers = await User.find({ firstName: searchRegex }).select("firstName lastName username status").limit(5).lean();
-  console.log("Test search results:", testUsers);
+  const testUsers = await User.find({ firstName: searchRegex }).select("firstName lastName username status profileImage").limit(5).lean();
 
   const users = await User.find({
     $or: [
@@ -175,7 +173,7 @@ export const searchUsers = asyncHandler(async (req, res) => {
     ],
     status: "active",
   })
-    .select("firstName lastName username avatar isVerified profile_type bio")
+    .select("firstName lastName username avatar isVerified profile_type bio profileImage")
     .skip(skip)
     .limit(searchLimit)
     .lean();
@@ -186,9 +184,6 @@ export const searchUsers = asyncHandler(async (req, res) => {
     fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
   }));
 
-  console.log("Search query:", query);
-  console.log("Search regex:", searchRegex);
-  console.log("Found users:", usersWithFullName.length);
 
   const total = await User.countDocuments({
     $or: [

@@ -13,7 +13,6 @@ try {
       credential: admin.credential.cert(serviceAccount),
     });
     
-    console.log("✅ Firebase Admin initialized successfully");
   } else {
     console.warn("⚠️ Firebase service account not configured. Push notifications will be disabled.");
   }
@@ -37,13 +36,11 @@ export const sendPushNotification = async (userId, notification) => {
     const settings = await NotificationSettings.findOne({ user_id: userId });
     
     if (!settings || !settings.fcm_tokens || settings.fcm_tokens.length === 0) {
-      console.log(`No FCM tokens found for user ${userId}`);
       return null;
     }
 
     // Check if push notifications are enabled
     if (!settings.preferences.push.enabled) {
-      console.log(`Push notifications disabled for user ${userId}`);
       return null;
     }
 
@@ -53,7 +50,6 @@ export const sendPushNotification = async (userId, notification) => {
                           settings.preferences.push[notificationType];
     
     if (typePreference === false) {
-      console.log(`Push notifications for ${notificationType} disabled for user ${userId}`);
       return null;
     }
 
@@ -67,13 +63,11 @@ export const sendPushNotification = async (userId, notification) => {
         if (start_time < end_time) {
           // Same day range (e.g., 09:00 - 22:00)
           if (currentTime >= start_time && currentTime <= end_time) {
-            console.log(`Do Not Disturb active for user ${userId}`);
             return null;
           }
         } else {
           // Overnight range (e.g., 22:00 - 08:00)
           if (currentTime >= start_time || currentTime <= end_time) {
-            console.log(`Do Not Disturb active for user ${userId}`);
             return null;
           }
         }
@@ -139,7 +133,6 @@ export const sendPushNotification = async (userId, notification) => {
       }
     }
 
-    console.log(`✅ Push notification sent to user ${userId}. Success: ${response.successCount}, Failure: ${response.failureCount}`);
     
     return response;
   } catch (error) {

@@ -7,7 +7,7 @@ import { Comment } from "../models/comment.model.js";
 import { User } from "../models/user.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 
 // Get home feed
 export const getHomeFeed = asyncHandler(async (req, res) => {
@@ -25,7 +25,6 @@ export const getHomeFeed = asyncHandler(async (req, res) => {
   // STEP 2: Include your own posts
   const userIdsToShow = [...followingIds, userId];
 
-  console.log(`User ${userId} follows ${followingIds.length} users`);
 
   // STEP 3: Get posts ONLY from followed users
   const posts = await Post.find({
@@ -86,7 +85,6 @@ export const getReelsFeed = asyncHandler(async (req, res) => {
   const followingIds = following.map(f => f.following_id);
   const userIdsToShow = [...followingIds, userId];
 
-  console.log(`User ${userId} follows ${followingIds.length} users for reels`);
 
   // STEP 2: Get reels ONLY from followed users
   const reels = await Reel.find({
@@ -217,7 +215,6 @@ export const getUserPosts = asyncHandler(async (req, res) => {
 
     if (!isFollowing) {
       // Private account and not following - return empty
-      console.log(`🔒 Private account ${userId} - user ${currentUserId} not following`);
       return res.status(200).json(
         new ApiResponse(
           200,

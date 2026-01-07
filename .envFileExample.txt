@@ -18,6 +18,15 @@ ACCESS_TOKEN_EXPIRY=15m
 REFRESH_TOKEN_EXPIRY=7d
 
 
+# Redis Configuration (Required for cluster mode)
+REDIS_URL=redis://localhost:6379
+
+# Cluster Configuration (Optional)
+ENABLE_CLUSTER=false                    # Set to 'true' to enable clustering
+CLUSTER_WORKERS=4                       # Number of worker processes (default: CPU cores)
+NODE_ENV=development                    # Set to 'production' for production mode
+
+
 kunalrisaanva12_db_user
 
 
@@ -25,4 +34,4 @@ kunalrisaanva12_db_user
 // enable two factor authentication
 // moggern for logging
 // helmet for security headers
-// 
+// ✅ clustering implemented

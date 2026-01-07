@@ -9,18 +9,15 @@ if (process.env.REDIS_URL) {
     maxRetriesPerRequest: null,
     tls: {}, // required for Upstash
   });
-  console.log("Using Upstash Redis");
 } else {
   // ✅ Local development
   redis = new Redis({
     host: "127.0.0.1",
     port: 6379,
   });
-  console.log("Using Local Redis");
 }
 
 redis.on("connect", () => {
-  console.log("Redis connected successfully");
 });
 
 redis.on("error", (err) => {

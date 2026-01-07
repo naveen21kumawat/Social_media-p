@@ -7,14 +7,13 @@ import { Notification } from "../models/notification.model.js";
 import { User } from "../models/user.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 
 // Upload a new post
 export const uploadPost = asyncHandler(async (req, res) => {
   const { caption, tags, location, visibility } = req.body;
   const userId = req.user._id; // User who is uploading the post
-  console.log("post creation working -->");
   // Get uploaded files from multer (temporary local files)
   const files = req.files;
 
@@ -185,7 +184,6 @@ export const likePost = asyncHandler(async (req, res) => {
 
   if (existingLike) {
     // Already liked - return success (idempotent)
-    console.log(`✅ Post ${postId} already liked by user ${userId} - returning success`);
     return res
       .status(200)
       .json(
@@ -212,7 +210,6 @@ export const likePost = asyncHandler(async (req, res) => {
   post.likes_count += 1;
   await post.save();
 
-  console.log(`❤️ Post ${postId} liked by user ${userId}`);
 
   // Create notification for post owner (only if liker is not the post owner)
   if (post.user_id.toString() !== userId.toString()) {
@@ -233,7 +230,6 @@ export const likePost = asyncHandler(async (req, res) => {
         action_url: `/post/${postId}`
       });
 
-      console.log(`🔔 Notification created for post owner ${post.user_id}`);
     } catch (notifError) {
       // Don't fail the like operation if notification creation fails
       console.error('Failed to create notification:', notifError);
@@ -268,7 +264,6 @@ export const unlikePost = asyncHandler(async (req, res) => {
 
   if (!like) {
     // Not liked - return success (idempotent)
-    console.log(`✅ Post ${postId} not liked by user ${userId} - returning success`);
     const post = await Post.findById(postId);
     return res
       .status(200)
@@ -292,7 +287,6 @@ export const unlikePost = asyncHandler(async (req, res) => {
     await post.save();
   }
 
-  console.log(`💔 Post ${postId} unliked by user ${userId}`);
 
   return res
     .status(200)
@@ -372,7 +366,6 @@ export const commentOnPost = asyncHandler(async (req, res) => {
         action_url: `/post/${postId}`
       });
 
-      console.log(`🔔 Notification created for post owner ${post.user_id}`);
     } catch (notifError) {
       // Don't fail the comment operation if notification creation fails
       console.error('Failed to create notification:', notifError);

@@ -1,6 +1,6 @@
 import { User } from "../models/user.model.js";
 import ApiError from "../utils/ApiError.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 import jwt from "jsonwebtoken";
 
 const verifyJwt = asyncHandler(async (req, _, next) => {
@@ -27,7 +27,6 @@ const verifyJwt = asyncHandler(async (req, _, next) => {
     req.user = user;
     next();
   } catch (error) {
-    console.log("JWT Verification Error -->", error.name, error.message);
 
     if (error.name === "TokenExpiredError") {
       throw new ApiError(401, "Token has expired. Please login again.");
