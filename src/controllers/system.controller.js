@@ -1,7 +1,7 @@
 import { SystemConfig } from "../models/systemConfig.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 import mongoose from "mongoose";
 import os from "os";
 

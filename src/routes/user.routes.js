@@ -15,7 +15,10 @@ import {
   unlockAccount,
   resetPasswordForTesting,
   getUserProfile,
-  updateProfileImage
+  updateProfileImage,
+  blockUser,
+  unblockUser,
+  getBlockedUsers
 } from "../controllers/user.controller.js";
 import { verifyJwt, verifyJwt as verifyRoute } from "../middleware/auth.middleware.js"; // use this to protect routes
 import { uploadSingle } from "../middleware/upload.middleware.js";
@@ -34,7 +37,7 @@ router.route("/unlock-account").post(unlockAccount); // For development/testing
 router.route("/reset-password-testing").post(resetPasswordForTesting); // For development/testing
 
 // Public profile routes
-router.route("/profile/:userId").get(verifyJwt,getUserProfile);
+router.route("/profile/:userId").get(verifyJwt, getUserProfile);
 
 // protected routes
 router.route("/logout").post(verifyRoute, logOutUser);
@@ -44,5 +47,10 @@ router.route("/delete/:id").delete(verifyRoute, deleteUser);
 router.route("/update-profile-picture").put(verifyJwt, uploadSingle, updateProfileImage);
 // router.route("/update-cover-photo").put(verifyRoute, updateCoverPhoto);
 router.route("/update-profile").put(verifyRoute, updateProfile);
+
+// Block/Unblock routes
+router.route("/block/:userId").post(verifyRoute, blockUser);
+router.route("/unblock/:userId").post(verifyRoute, unblockUser);
+router.route("/blocked-list").get(verifyRoute, getBlockedUsers);
 
 export { router as userRoutes };

@@ -6,7 +6,7 @@ import { Post } from "../models/post.model.js";
 import { Reel } from "../models/reel.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 import {
   encryptMessage,
   decryptMessage,
@@ -298,7 +298,6 @@ export const sendMessage = asyncHandler(async (req, res) => {
       throw new ApiError(400, "Content ID required for shared content");
     }
 
-    console.log(`📤 Sharing ${messageType} with ID: ${sharedContent.contentId}`);
 
     // Fetch and cache the content data
     let contentData;
@@ -364,7 +363,6 @@ export const sendMessage = asyncHandler(async (req, res) => {
       messageData.encryptedContent = encryptMessage(defaultText);
     }
 
-    console.log(`✅ Cached ${messageType} data for preview`);
   }
 
   // Create message
