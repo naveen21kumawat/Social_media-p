@@ -23,7 +23,6 @@ router.route("/login").post(adminLogin);
 // All other routes require authentication and admin role
 const adminAuth = [verifyJwt, (req, res, next) => {
 
-    console.log("working");
   if (req.user.userType !== "admin") {
     return res.status(403).json({
       success: false,

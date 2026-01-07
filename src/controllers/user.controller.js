@@ -3,7 +3,7 @@ import { Followers } from "../models/followers.model.js";
 import { Post } from "../models/post.model.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import emailService from "../services/email.service.js";
@@ -47,8 +47,6 @@ export const generateAccessAndRefreshTokens = async (userId) => {
 
 const registerUser = asyncHandler(async (req, res) => {
   const { firstName, lastName, email, phone, password } = req.body;
-
-  console.log("wokring --->");
 
   // Validate required fields
   if (!firstName?.trim() || !lastName?.trim() || !password?.trim()) {
@@ -354,18 +352,9 @@ const loginUser = asyncHandler(async (req, res) => {
     query.push({ phone: phone.trim() });
   }
 
-  console.log("Query being executed:", JSON.stringify(query));
-
   const user = await User.findOne({
     $or: query,
   }).select("+password");
-
-  console.log("Found user:", {
-    id: user?._id,
-    email: user?.email,
-    phone: user?.phone,
-    firstName: user?.firstName,
-  });
 
   if (!user) {
     throw new ApiError(404, "User does not exist");
@@ -374,8 +363,6 @@ const loginUser = asyncHandler(async (req, res) => {
   // Verify the user matches what we're looking for
   const emailMatch = email && user.email?.toLowerCase() === email.toLowerCase();
   const phoneMatch = phone && user.phone === phone;
-
-  console.log("Email match:", emailMatch, "Phone match:", phoneMatch);
 
   if (!emailMatch && !phoneMatch) {
     console.error("QUERY MISMATCH! Found wrong user!");
@@ -470,8 +457,6 @@ const loginUser = asyncHandler(async (req, res) => {
   user.lockUntil = undefined;
 
   await user.save({ validateBeforeSave: false });
-  console.log("OTP saved to user record ------>",user.email);
-  console.log("OTP saved to user record ------>",user.firstName);
   try {
     // Send OTP via email or SMS based on what user has
     if (user.email && email) {
@@ -519,11 +504,6 @@ const loginUser = asyncHandler(async (req, res) => {
 const verifyLoginOtp = asyncHandler(async (req, res) => {
   const { email, phone, userId, otp } = req.body;
   
-  console.log("Verify Login OTP attempt:");
-  console.log("- Email:", email);
-  console.log("- Phone:", phone);
-  console.log("- UserId:", userId);
-  console.log("- OTP received:", otp);
   
   if (!otp) {
     throw new ApiError(400, "OTP is required");
@@ -543,7 +523,6 @@ const verifyLoginOtp = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User does not exist");
   }
 
-  console.log("User found:", {
     id: user._id,
     email: user.email,
     phone: user.phone,
@@ -652,7 +631,6 @@ const logOutUser = asyncHandler(async (req, res) => {
 
 // Get current user
 const getCurrentUser = asyncHandler(async (req, res) => {
-  // to do all information --
 
   const user = await User.findById(req.user._id).select(
     "-password -refreshToken"
@@ -893,7 +871,6 @@ const updateProfile = asyncHandler(async (req, res) => {
   if (profile_type === 'private' || profile_type === 'public') {
     isPrivate = profile_type === 'private';
     profile_type = undefined; // Don't update the actual profile_type field
-    console.log(`⚠️ Converting profile_type "${req.body.profile_type}" to isPrivate: ${isPrivate}`);
   }
 
   // Validate isPrivate if provided
@@ -925,7 +902,6 @@ const updateProfile = asyncHandler(async (req, res) => {
     user.isPrivate = isPrivate;
 
     // Log the privacy change
-    console.log(`✅ User ${userId} changed account privacy: ${oldPrivacy ? 'private' : 'public'} → ${isPrivate ? 'private' : 'public'}`);
 
     // If switching from private to public, auto-accept all pending follow requests
     if (oldPrivacy === true && isPrivate === false) {
@@ -935,7 +911,6 @@ const updateProfile = asyncHandler(async (req, res) => {
       );
 
       if (pendingRequests.modifiedCount > 0) {
-        console.log(`✅ Auto-accepted ${pendingRequests.modifiedCount} pending follow requests for user ${userId}`);
       }
     }
   }
@@ -1084,7 +1059,6 @@ const getUserProfile = asyncHandler(async (req, res) => {
     const allFollowRecords = await Followers.find({
       follower_id: currentUserId,
     });
-    console.log("🔍 All follow records for current user:", allFollowRecords);
 
     // Check if there's a follow relationship
     const followRecord = await Followers.findOne({
@@ -1093,7 +1067,6 @@ const getUserProfile = asyncHandler(async (req, res) => {
     });
 
     if (followRecord) {
-      console.log("🔍 Follow record status:", followRecord.status);
       if (followRecord.status === "accepted") {
         isFollowing = true;
       } else if (followRecord.status === "pending") {
@@ -1133,18 +1106,12 @@ const getUserProfile = asyncHandler(async (req, res) => {
 
 const updateProfileImage = asyncHandler(async (req, res) => {
   const userId = req.user?._id;
-  console.log("Request headers:", req.headers);
-  console.log("Request content-type:", req.get('Content-Type'));
-  console.log("req.file:", req.file);
-  console.log("req.files:", req.files);
-  console.log("Request body:", req.body);
   if (!userId) {
     throw new ApiError(400, "Please provide user ID first");
   }
   // The file will be available as req.file after uploadSingle middleware
   // Try different ways to access the file
   const file = req.file || req.files?.file || req.files?.[0];
-  console.log("Uploaded file info:", file);
 
   if (!file) {
     throw new ApiError(400, "At least one media file (image/video) is required");
@@ -1172,6 +1139,162 @@ const updateProfileImage = asyncHandler(async (req, res) => {
     );
 });
 
+
+// Block a user
+const blockUser = asyncHandler(async (req, res) => {
+  const currentUserId = req.user._id; // From JWT middleware
+  const { userId } = req.params; // Extract from URL parameter
+
+  // Validation: Check if userId is provided
+  if (!userId) {
+    throw new ApiError(400, "User ID is required");
+  }
+
+  // Validation: Check if user is trying to block themselves
+  if (currentUserId.toString() === userId.toString()) {
+    throw new ApiError(400, "You cannot block yourself");
+  }
+
+  // Validation: Check if the user to be blocked exists
+  const userToBlock = await User.findById(userId);
+  if (!userToBlock) {
+    throw new ApiError(404, "User not found");
+  }
+
+  // Get current user
+  const currentUser = await User.findById(currentUserId);
+
+  // Check if user is already blocked
+  if (currentUser.blockedUsers.includes(userId)) {
+    throw new ApiError(400, "User is already blocked");
+  }
+
+  // Add user to blocked list
+  currentUser.blockedUsers.push(userId);
+  await currentUser.save();
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        {
+          blockedUserId: userId,
+          blockedUser: {
+            _id: userToBlock._id,
+            firstName: userToBlock.firstName,
+            lastName: userToBlock.lastName,
+            username: userToBlock.username,
+            profileImage: userToBlock.profileImage || userToBlock.avatar,
+          },
+        },
+        "User blocked successfully"
+      )
+    );
+});
+
+// Unblock a user
+const unblockUser = asyncHandler(async (req, res) => {
+  const currentUserId = req.user._id; // From JWT middleware
+  const { userId } = req.params; // Extract from URL parameter
+
+  // Validation: Check if userId is provided
+  if (!userId) {
+    throw new ApiError(400, "User ID is required");
+  }
+
+  // Validation: Check if the user exists
+  const userToUnblock = await User.findById(userId);
+  if (!userToUnblock) {
+    throw new ApiError(404, "User not found");
+  }
+
+  // Get current user
+  const currentUser = await User.findById(currentUserId);
+
+  // Check if user is actually blocked
+  if (!currentUser.blockedUsers.includes(userId)) {
+    throw new ApiError(400, "User is not blocked");
+  }
+
+  // Remove user from blocked list
+  currentUser.blockedUsers = currentUser.blockedUsers.filter(
+    (id) => id.toString() !== userId.toString()
+  );
+  await currentUser.save();
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        {
+          unblockedUserId: userId,
+        },
+        "User unblocked successfully"
+      )
+    );
+});
+
+// Get list of blocked users with pagination
+const getBlockedUsers = asyncHandler(async (req, res) => {
+  const currentUserId = req.user._id; // From JWT middleware
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const skip = (page - 1) * limit;
+
+  // Get current user with populated blocked users
+  const currentUser = await User.findById(currentUserId)
+    .select("blockedUsers")
+    .populate({
+      path: "blockedUsers",
+      select: "firstName lastName username profileImage avatar bio isVerified",
+      options: {
+        skip: skip,
+        limit: limit,
+      },
+    });
+
+  if (!currentUser) {
+    throw new ApiError(404, "User not found");
+  }
+
+  // Get total count of blocked users
+  const totalBlocked = currentUser.blockedUsers.length;
+  const totalPages = Math.ceil(totalBlocked / limit);
+
+  // Format the response
+  const blockedUsers = currentUser.blockedUsers.map((user) => ({
+    _id: user._id,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    fullName: `${user.firstName} ${user.lastName}`,
+    username: user.username,
+    profileImage: user.profileImage || user.avatar,
+    bio: user.bio,
+    isVerified: user.isVerified,
+  }));
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        blockedUsers,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalBlocked,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
+        },
+      },
+      "Blocked users retrieved successfully"
+    )
+  );
+});
+
+
+
 export {
   registerUser,
   verifyRegisterOtp,
@@ -1188,6 +1311,8 @@ export {
   unlockAccount,
   resetPasswordForTesting,
   getUserProfile,
-  updateProfileImage
-
+  updateProfileImage,
+  blockUser,
+  unblockUser,
+  getBlockedUsers
 };

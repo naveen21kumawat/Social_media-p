@@ -2,7 +2,7 @@ import { Story } from "../models/story.model.js";
 import { Followers } from "../models/followers.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 import { uploadOnCloudinary, delteOnCloudinray } from "../utils/cloudinary.js";
 
 // Upload a story
@@ -71,7 +71,6 @@ export const deleteStory = asyncHandler(async (req, res) => {
   if (story.media?.public_id) {
     try {
       await delteOnCloudinray(story.media.public_id);
-      console.log(`Deleted story media from Cloudinary: ${story.media.public_id}`);
     } catch (error) {
       console.error("Error deleting from Cloudinary:", error);
       // Continue with story deletion even if Cloudinary fails
@@ -118,7 +117,6 @@ export const viewStory = asyncHandler(async (req, res) => {
     story.viewCount = story.views.length;
     await story.save();
 
-    console.log(`✅ Story ${storyId} viewed by user ${userId}`);
   }
 
   return res
@@ -180,8 +178,6 @@ export const getUserStories = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const currentUserId = req.user._id;
 
-  console.log(`Fetching stories for userId: ${userId}, currentUser: ${currentUserId}`);
-
   const stories = await Story.find({
     user_id: userId,
     is_deleted: false,
@@ -190,7 +186,6 @@ export const getUserStories = asyncHandler(async (req, res) => {
     .populate("user_id", "firstName lastName username profilePicture profileImage avatar")
     .sort({ createdAt: -1 });
 
-  console.log(`Found ${stories.length} stories for user ${userId}`);
 
   // Check privacy settings and transform data
   const filteredStories = stories
@@ -218,7 +213,6 @@ export const getUserStories = asyncHandler(async (req, res) => {
       privacy: story.privacy,
     }));
 
-  console.log(`Returning ${filteredStories.length} filtered stories`);
 
   return res
     .status(200)
@@ -238,7 +232,6 @@ export const getAllStories = asyncHandler(async (req, res) => {
   const followingIds = following.map(f => f.following_id);
   const userIdsToShow = [...followingIds, userId];
 
-  console.log(`User ${userId} follows ${followingIds.length} users for stories`);
 
   // STEP 2: Get stories ONLY from followed users (active stories)
   const now = new Date();
@@ -291,7 +284,6 @@ export const cleanupExpiredStories = asyncHandler(async (req, res) => {
       is_deleted: false,
     });
 
-    console.log(`Found ${expiredStories.length} expired stories to clean up`);
 
     let deletedCount = 0;
     let cloudinaryDeletedCount = 0;
@@ -302,7 +294,6 @@ export const cleanupExpiredStories = asyncHandler(async (req, res) => {
         try {
           await delteOnCloudinray(story.media.public_id);
           cloudinaryDeletedCount++;
-          console.log(`Deleted expired story media: ${story.media.public_id}`);
         } catch (error) {
           console.error(`Failed to delete from Cloudinary: ${story.media.public_id}`, error);
         }
@@ -315,7 +306,6 @@ export const cleanupExpiredStories = asyncHandler(async (req, res) => {
     }
 
     const message = `Cleaned up ${deletedCount} expired stories (${cloudinaryDeletedCount} from Cloudinary)`;
-    console.log(message);
 
     return res
       ? res.status(200).json(new ApiResponse(200, { deletedCount, cloudinaryDeletedCount }, message))
@@ -332,7 +322,6 @@ export const cleanupExpiredStories = asyncHandler(async (req, res) => {
 export const startStoryCleanupJob = () => {
   // Run cleanup every hour
   setInterval(async () => {
-    console.log("🧹 Running story cleanup job...");
     try {
       await cleanupExpiredStories();
     } catch (error) {
@@ -342,7 +331,6 @@ export const startStoryCleanupJob = () => {
 
   // Run immediately on startup
   setTimeout(async () => {
-    console.log("🧹 Running initial story cleanup...");
     try {
       await cleanupExpiredStories();
     } catch (error) {

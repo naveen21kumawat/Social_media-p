@@ -4,7 +4,7 @@ import { Post } from "../models/post.model.js";
 import { Reel } from "../models/reel.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 import {
   notifyPostLike,
   notifyPostComment,

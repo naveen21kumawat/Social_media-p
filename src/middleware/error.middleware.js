@@ -4,10 +4,10 @@ const errorMiddleware = (err, req, res, next) => {
   console.error({
     message: err.message,
     statusCode: err.statusCode,
-    stack: err.stack,
+    // stack: err.stack, // Optional: uncomment if needed for prod debugging in logs
     url: req.url,
     method: req.method,
-    body: req.body
+    // body: req.body // ❌ REMOVED for security (don't log passwords/tokens)
   });
 
   const status = err.statusCode || 500;
@@ -29,7 +29,6 @@ const errorMiddleware = (err, req, res, next) => {
     stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
   };
 
-  console.log("Sending error response:", JSON.stringify(errorResponse, null, 2));
   res.status(status).json(errorResponse);
 };
 

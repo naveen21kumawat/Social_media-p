@@ -8,7 +8,7 @@ import { Report } from "../models/report.model.js";
 import { Notification } from "../models/notification.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import asyncHandler from "../utils/asynHandler.js";
+import asyncHandler from "../utils/asyncHandler.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 
 // Upload a reel
@@ -309,7 +309,6 @@ export const toggleLikeReel = asyncHandler(async (req, res) => {
           action_url: `/reel/${reelId}`
         });
 
-        console.log(`🔔 Notification created for reel owner ${reel.user_id}`);
       } catch (notifError) {
         // Don't fail the like operation if notification creation fails
         console.error('Failed to create notification:', notifError);
@@ -387,7 +386,6 @@ export const commentOnReel = asyncHandler(async (req, res) => {
         action_url: `/reel/${reelId}`
       });
 
-      console.log(`🔔 Notification created for reel owner ${reel.user_id}`);
     } catch (notifError) {
       // Don't fail the comment operation if notification creation fails
       console.error('Failed to create notification:', notifError);
@@ -455,7 +453,6 @@ export const getUserReels = asyncHandler(async (req, res) => {
 
     if (!isFollowing) {
       // Private account and not following - return empty
-      console.log(`🔒 Private account ${userId} - user ${currentUserId} not following reels`);
       return res.status(200).json(
         new ApiResponse(
           200,
@@ -553,7 +550,6 @@ export const saveReel = asyncHandler(async (req, res) => {
   reel.saves_count = (reel.saves_count || 0) + 1;
   await reel.save();
 
-  console.log(`💾 Reel ${reelId} saved by user ${userId}`);
 
   return res
     .status(200)
@@ -582,7 +578,6 @@ export const unsaveReel = asyncHandler(async (req, res) => {
     await reel.save();
   }
 
-  console.log(`🗑️ Reel ${reelId} unsaved by user ${userId}`);
 
   return res
     .status(200)
@@ -665,7 +660,6 @@ export const reportReel = asyncHandler(async (req, res) => {
     attachments,
   });
 
-  console.log(`🚨 Reel ${reelId} reported by user ${userId} for: ${reason}`);
 
   return res
     .status(201)
