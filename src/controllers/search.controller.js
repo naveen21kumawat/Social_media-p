@@ -2,6 +2,7 @@ import { User } from "../models/user.model.js";
 import { Post } from "../models/post.model.js";
 import { Hashtag } from "../models/hashtag.model.js";
 import { SearchHistory } from "../models/searchHistory.model.js";
+import { Followers } from "../models/followers.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asyncHandler.js";
@@ -65,6 +66,23 @@ export const globalSearch = asyncHandler(async (req, res) => {
     total_results: 0,
   };
 
+  // Get blocked users for filtering
+  let blockedByCurrentUser = [];
+  let usersWhoBlockedCurrentUser = [];
+
+  if (userId) {
+    const currentUser = await User.findById(userId).select("blockedUsers").lean();
+    blockedByCurrentUser = currentUser?.blockedUsers || [];
+
+    const usersWithBlocks = await User.find({
+      blockedUsers: userId
+    }).select("_id").lean();
+
+    usersWhoBlockedCurrentUser = usersWithBlocks.map(u => u._id);
+  }
+
+  const allBlockedUserIds = [...blockedByCurrentUser, ...usersWhoBlockedCurrentUser];
+
   // Search Users (if type is not specified or is 'users')
   if (!type || type === "users") {
     results.users = await User.find({
@@ -75,6 +93,7 @@ export const globalSearch = asyncHandler(async (req, res) => {
         { email: searchRegex },
       ],
       status: "active",
+      _id: { $nin: allBlockedUserIds },
     })
       .select("firstName lastName username avatar isVerified profile_type bio")
       .limit(searchLimit)
@@ -104,6 +123,7 @@ export const globalSearch = asyncHandler(async (req, res) => {
         { bio: searchRegex },
       ],
       status: "active",
+      _id: { $nin: allBlockedUserIds },
     })
       .select("firstName lastName username avatar isVerified profile_type bio")
       .limit(searchLimit)
@@ -159,11 +179,24 @@ export const searchUsers = asyncHandler(async (req, res) => {
   const skip = (parseInt(page) - 1) * searchLimit;
   const searchRegex = new RegExp(query, "i");
 
-  // Debug: Check total users in DB
-  const totalActiveUsers = await User.countDocuments({ status: "active" });
+  // Get current user's blocked list
+  let blockedByCurrentUser = [];
+  let usersWhoBlockedCurrentUser = [];
 
-  // Debug: Find any user with firstName containing the search term
-  const testUsers = await User.find({ firstName: searchRegex }).select("firstName lastName username status profileImage").limit(5).lean();
+  if (userId) {
+    const currentUser = await User.findById(userId).select("blockedUsers").lean();
+    blockedByCurrentUser = currentUser?.blockedUsers || [];
+
+    // Find users who have blocked the current user
+    const usersWithBlocks = await User.find({
+      blockedUsers: userId
+    }).select("_id").lean();
+
+    usersWhoBlockedCurrentUser = usersWithBlocks.map(u => u._id);
+  }
+
+  // Combine both block lists to exclude from search
+  const allBlockedUserIds = [...blockedByCurrentUser, ...usersWhoBlockedCurrentUser];
 
   const users = await User.find({
     $or: [
@@ -172,18 +205,30 @@ export const searchUsers = asyncHandler(async (req, res) => {
       { username: searchRegex },
     ],
     status: "active",
+    // Exclude blocked users (bidirectional)
+    _id: { $nin: allBlockedUserIds },
   })
     .select("firstName lastName username avatar isVerified profile_type bio profileImage")
     .skip(skip)
     .limit(searchLimit)
     .lean();
 
-  // Add full name to each user
-  const usersWithFullName = users.map(user => ({
-    ...user,
-    fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-  }));
+  // Add full name and followers count to each user
+  const usersWithFullName = await Promise.all(
+    users.map(async (user) => {
+      // Get followers count for this user
+      const followersCount = await Followers.countDocuments({
+        following_id: user._id,
+        status: "accepted",
+      });
 
+      return {
+        ...user,
+        fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        followers_count: followersCount,
+      };
+    })
+  );
 
   const total = await User.countDocuments({
     $or: [
@@ -192,6 +237,7 @@ export const searchUsers = asyncHandler(async (req, res) => {
       { username: searchRegex },
     ],
     status: "active",
+    _id: { $nin: allBlockedUserIds },
   });
 
   // Save search history
@@ -229,6 +275,23 @@ export const searchPages = asyncHandler(async (req, res) => {
   const skip = (parseInt(page) - 1) * searchLimit;
   const searchRegex = new RegExp(query, "i");
 
+  // Get blocked users for filtering
+  let blockedByCurrentUser = [];
+  let usersWhoBlockedCurrentUser = [];
+
+  if (userId) {
+    const currentUser = await User.findById(userId).select("blockedUsers").lean();
+    blockedByCurrentUser = currentUser?.blockedUsers || [];
+
+    const usersWithBlocks = await User.find({
+      blockedUsers: userId
+    }).select("_id").lean();
+
+    usersWhoBlockedCurrentUser = usersWithBlocks.map(u => u._id);
+  }
+
+  const allBlockedUserIds = [...blockedByCurrentUser, ...usersWhoBlockedCurrentUser];
+
   const pages = await User.find({
     profile_type: "business",
     $or: [
@@ -238,6 +301,7 @@ export const searchPages = asyncHandler(async (req, res) => {
       { bio: searchRegex },
     ],
     status: "active",
+    _id: { $nin: allBlockedUserIds },
   })
     .select("firstName lastName username avatar isVerified profile_type bio coverPhoto")
     .skip(skip)
@@ -253,6 +317,7 @@ export const searchPages = asyncHandler(async (req, res) => {
       { bio: searchRegex },
     ],
     status: "active",
+    _id: { $nin: allBlockedUserIds },
   });
 
   // Save search history
@@ -342,7 +407,25 @@ export const searchHashtags = asyncHandler(async (req, res) => {
 // GET /search/trending - Get trending topics, hashtags, and posts
 export const getTrending = asyncHandler(async (req, res) => {
   const { limit = 10, timeframe = "24h" } = req.query;
+  const userId = req.user?._id;
   const searchLimit = Math.min(parseInt(limit), 50);
+
+  // Get blocked users for filtering
+  let blockedByCurrentUser = [];
+  let usersWhoBlockedCurrentUser = [];
+
+  if (userId) {
+    const currentUser = await User.findById(userId).select("blockedUsers").lean();
+    blockedByCurrentUser = currentUser?.blockedUsers || [];
+
+    const usersWithBlocks = await User.find({
+      blockedUsers: userId
+    }).select("_id").lean();
+
+    usersWhoBlockedCurrentUser = usersWithBlocks.map(u => u._id);
+  }
+
+  const allBlockedUserIds = [...blockedByCurrentUser, ...usersWhoBlockedCurrentUser];
 
   // Calculate time range for trending
   const timeRanges = {
@@ -384,6 +467,7 @@ export const getTrending = asyncHandler(async (req, res) => {
   const trendingPosts = await Post.find({
     is_deleted: false,
     createdAt: { $gte: sinceDate },
+    user_id: { $nin: allBlockedUserIds },
   })
     .populate("user_id", "firstName lastName username avatar isVerified")
     .sort("-likes_count -comments_count")
@@ -394,6 +478,7 @@ export const getTrending = asyncHandler(async (req, res) => {
   const trendingUsers = await User.find({
     status: "active",
     lastActive: { $gte: sinceDate },
+    _id: { $nin: allBlockedUserIds },
   })
     .select("firstName lastName username avatar isVerified profile_type bio")
     .limit(searchLimit)
