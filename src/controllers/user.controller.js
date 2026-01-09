@@ -1,6 +1,8 @@
 import { User } from "../models/user.model.js";
 import { Followers } from "../models/followers.model.js";
 import { Post } from "../models/post.model.js";
+import { Reel } from "../models/reel.model.js";
+import { Save } from "../models/save.model.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
 import asyncHandler from "../utils/asyncHandler.js";
@@ -650,8 +652,14 @@ const getCurrentUser = asyncHandler(async (req, res) => {
     totalPosts = await Post.countDocuments({
       user_id: user._id,
       is_deleted: false,
+    }),
+    totalReels = await Reel.countDocuments({
+      user_id: user._id,
+      is_deleted: false,
+    }),
+    totalSavedPosts = await Save.countDocuments({
+      user_id: user._id,
     });
-
   return res.status(200).json(
     new ApiResponse(
       200,
@@ -660,6 +668,8 @@ const getCurrentUser = asyncHandler(async (req, res) => {
         followersCount,
         followingCount,
         totalPosts,
+        totalReels,
+        totalSavedPosts,
       },
       "User fetched successfully"
     )
@@ -1048,6 +1058,11 @@ const getUserProfile = asyncHandler(async (req, res) => {
     is_deleted: false,
   });
 
+  // Count reels - ADD THIS
+  const reelsCount = await Reel.countDocuments({
+    user_id: user._id,
+  });
+
   // Check if current user is following this profile user
   const currentUserId = req.user?._id; // Get from auth middleware
 
@@ -1089,6 +1104,7 @@ const getUserProfile = asyncHandler(async (req, res) => {
     followersCount,
     followingCount,
     postsCount,
+    reelsCount,  // ADD THIS LINE
     isVerified: user.isVerified,
     profile_type: user.profile_type,
     isPrivate: user.isPrivate,
